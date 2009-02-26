@@ -8,7 +8,7 @@
 #     Budget finances on the console
 #
 # Requirements:
-#     1) Python 2.6 or lower (not Python 3000 compatible yet)
+#     1) Python 2.6 (but not Python 3000 compatible yet)
 #     2) Sqlite3
 #     3) Courage (for the bugs)
 #
@@ -21,12 +21,11 @@
 #
 ############################
 
-#from __future__ import with_statement
 import datetime
 import os
 import pdb
 from optparse import OptionParser
-from pysqlite2 import dbapi2 as sqlite
+import sqlite3 as sqlite
 
 default_database = 'data.db'
 parser = OptionParser()
