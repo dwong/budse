@@ -8,7 +8,7 @@
 #     Budget finances on the console
 #
 # Requirements:
-#     1) Python 2.6 (but not Python 3000 compatible yet)
+#     1) Python 2.5 - not compatible with future versions (yet)
 #     2) Sqlite3
 #     3) Courage (for the bugs)
 #
@@ -21,9 +21,10 @@
 #
 ############################
 
+from __future__ import with_statement
 import datetime
 import os
-import pdb
+#import pdb
 from optparse import OptionParser
 import sqlite3 as sqlite
 
@@ -2784,7 +2785,7 @@ def _create_user(newbie=False):
     clear_screen()
     if newbie:
         clear_screen()
-        print ('Welcome to Budse, create your very first user login.  This '
+        print ('Welcome to Budse, create your very first user login.  \nThis '
                'name is how you will login forever (so choose a good one!)\n')
         raw_input(continue_string)
     need_name_input = True
@@ -2800,33 +2801,32 @@ def _create_user(newbie=False):
     new_user.name = name
     if newbie:
         clear_screen()
-        print ('Deductions are subtracted from whole account deposits after '
-               'the gross deposit and before the net deposit (e.g., pay $50 '
-               'per deposit to social security)\n')
+        print ('Deductions are subtracted from whole account deposits \nafter '
+               'the gross deposit, before the net deposit \n(e.g., pay $50 '
+               'to social security)\n')
         raw_input(continue_string)
     new_user.deductions = new_user.ask_deduction_list()
     clear_screen()
     if newbie:
         clear_screen()
-        print ('Whole account actions allow you to filter your entire '
-               'transaction through the settings for your accounts (e.g., '
-               'set aside $10 per whole account deposit for your spam '
-               'and egg account)\n')
+        print ('Whole account actions allow you to filter your \nentire '
+               'transaction with your account setting \n(e.g., '
+               '$10 of net for your spam, $15 of net for your eggs,\n'
+               '40% of net for savings, 10% of gross for tithe, etc!)\n')
         raw_input(continue_string)
     new_user.modify_whole()
     if newbie:
         clear_screen()
-        print ('Accounts each represent a portion of your entire worth.  Each '
-               'has the following attributes:\n\n'
+        print ('Accounts each represent a portion of your entire worth.\n'
+               'Each of them has the following attributes:\n\n'
                'Name - What to call the account\n'
                'Description - How to describe the account\n'
                'Gross - Affect the gross (pre-deduction) or net'
-               ' (post-deduction) amount (e.g., title 10% of gross instead of'
-               ' 10% of net).  If in doubt just choose net.\n'
-               'Type - Whether this account has a percentage or fixed amount\n'
-               'Amount - the percentage or fixed amount (used to calculate how'
-               ' to split whole account transactions)\n'
-               'Total - running amount that is set aside for this account\n')
+               ' (post-deduction) \n    (e.g., tithe 10% of gross instead of'
+               ' 10% of net).  If in doubt choose net.\n'
+               'Type - A percentage or fixed amount\n'
+               'Amount - The percentage or fixed amount (used to \n    '
+               'calculate how to split whole account transactions)\n')
         raw_input(continue_string)
     accounts = []
     done = False
