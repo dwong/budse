@@ -190,7 +190,7 @@ def _ask_string(prompt='Description? ', default=None):
     """
     return _handle_input(prompt)
 
-def _ask_amount(prompt='Amount? '):
+def _ask_amount(prompt='Amount? ', type=float):
     """Query user for a float amount
     
     Keyword arguments:
@@ -203,7 +203,7 @@ def _ask_amount(prompt='Amount? '):
     amount = None
     while amount is None:
         try:
-            amount = _handle_input(prompt, float)
+            amount = _handle_input(prompt, type)
         except ConversionError:
             print 'Invalid value'
     # Only keep 2 decimal places of precision for these floats
@@ -2076,8 +2076,8 @@ class Budse(object):
     status = property(_get_status, _set_status, doc='Global application status')
 
     def search(self, keywords=None, limit=10, subaccount=None,
-               most_recent=False, begin_date=None,
-               end_date=None):
+               most_recent=True, begin_date=None, unique_id=None,
+               end_date=None, restrict=None, interactive=True):
         """Search the database for matching transactions.
 
         Keyword arguments:
@@ -2087,11 +2087,32 @@ class Budse(object):
         end_date -- Datetime.date object inclusive
         subaccount -- Search particular subaccount (default None - search all)
         most_recent -- Order the most recent searches first (default True)
+        restrict -- Restrict by transaction type
+        unique_id -- Unique ID of the transaction
+        interactive -- Prompt user for what to do
 
         Returns:
         A list of (root_transaction, [transaction_group]) tuples
 
         """
+        if interactive:
+            prompt = ('Search\n\n1 - Date Range\n2 - Date\n3 - ID\n%s\n\nChoice:' % 
+                      meta_actions)
+            try:
+                choice = _handle_input(prompt)
+                if choice == '1':
+                    begin_date = self._ask_date(prompt='Start of transactions')
+                    end_date = self._ask_date(prompt='End of transactions')
+                elif choice == '2':
+                    begin_date = self._ask_date(prompt='Transaction date')
+                    end_date = begin_date
+                elif choice == '3':
+                    unique_id = _ask_amount(type=int,
+                                            prompt='Unique ID of transaction: ')
+                    limit = 1
+            except MenuError:
+                return
+
         #TODO 4 prompt user for parameters
         # specific transaction id
         # keywords
@@ -2100,11 +2121,13 @@ class Budse(object):
         # put prompting here and break out the parameterized function call
         # to another function
         return self.user.get_transactions(subaccount=subaccount, 
-                                          order_by_most_recent=True,
-                                          limit=limit, 
+                                          order_by_most_recent=most_recent,
+                                          limit=limit,
                                           keyword_list=keywords,
                                           begin_date=begin_date,
-                                          end_date=end_date)
+                                          end_date=end_date,
+                                          restrict_type=restrict,
+                                          root_id=unique_id)
         
     def output_transactions(self, transactions):
         """Output a list of transactions.
@@ -2348,9 +2371,9 @@ class Budse(object):
             default = today + datetime.timedelta(month=-1)
         else:
             default = datetime.date(today.year, today.month, 1)
-        begin_date = self._ask_date(prompt_for='start of report',
+        begin_date = self._ask_date(prompt='Date of start of report',
                                     default_date=default)
-        end_date = self._ask_date(prompt_for='end of report')
+        end_date = self._ask_date(prompt='Date of end of report')
         filename = 'Report_%s.csv' % report_timestamp
         prompt = 'Output report to %s/%s' % (os.getcwd(), filename)
         output_file = self._ask_filepath(filename=filename, prompt=prompt)
@@ -2367,7 +2390,8 @@ class Budse(object):
                 root_transaction_groups = self.search(limit=None,
                                                       begin_date=begin_date,
                                                       end_date=end_date,
-                                                      most_recent=False)
+                                                      most_recent=False,
+                                                      interactive=False)
                 account_summary = {}
                 for account in self.user.accounts:
                     account_summary[account.id] = (account, 0.00, 0.00, 0.00)
@@ -2731,7 +2755,7 @@ class Budse(object):
             return False
 
     def _ask_date(self, default_date=datetime.date.today(), 
-                  prompt_for='transaction'):
+                  prompt='Date of transaction'):
         """Query user for a date.
         
         Keyword parameters:
@@ -2745,8 +2769,8 @@ class Budse(object):
         #TODO 5 print out using datetime.TextCalendar
         date = None
         output_format = '%Y-%m-%d'
-        prompt = ('Date of %s? (YYYY-MM-DD, default %s) ' % 
-                  (prompt_for, default_date.strftime(output_format)))
+        prompt = ('%s? (YYYY-MM-DD, default %s) ' % 
+                  (prompt, default_date.strftime(output_format)))
         while 1:
             temp_input = _handle_input(prompt)
             if temp_input == '':
