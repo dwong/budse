@@ -38,10 +38,10 @@ parser.add_option('-d', '--debug',
 opts, args = parser.parse_args()
 
 debug = opts.debug
-if debug and opts.database == default_database:
-    database_file = 'test.db'
-else:
-    database_file = opts.database
+#if debug and opts.database == default_database:
+#    database_file = 'test.db'
+#else:
+database_file = opts.database
 
 account_table = {'table': 'accounts', 'id': 'account_id', 'user': 'user_id',
                  'name': 'account_name', 'status': 'status',
@@ -178,7 +178,7 @@ def _confirm(prompt, default=False):
             print 'Not an acceptable value'
     return confirm    
 
-def _ask_string(prompt='Description? ', default=None):
+def _ask_string(prompt='Description? '):
     """Query user for a string, usually a description.
 
     Keyword arguments:
@@ -190,14 +190,16 @@ def _ask_string(prompt='Description? ', default=None):
     """
     return _handle_input(prompt)
 
-def _ask_amount(prompt='Amount? ', type=float):
+def _ask_amount(prompt='Amount? ', type=float, require_input=True):
     """Query user for a float amount
     
     Keyword arguments:
     prompt -- Output to the user to indicate input that's expected
+    type -- The type of amount that is expected
+    require_input -- Require the user to input a value
 
     Returns:
-    Float amount rounded to 2 decimal places
+    Numeric value
 
     """
     amount = None
@@ -283,7 +285,7 @@ def where(filters=None, implicit_joins=None):
                 else:
                     column, value = query_filter
                     comparison_operator = '='
-                query += '%s%s? AND ' % (column, comparison_operator)
+                query += '%s %s ? AND ' % (column, comparison_operator)
                 parameters.append(value)
    # Can't handle using OR clause (would also require using parenthesis in query)
             else:
@@ -429,7 +431,7 @@ def execute_query(query, query_arguments=None):
 #    if debug: print 'Executing query: %s\nWith parameters: %s' % (query, query_arguments)
     if query_arguments is None:
         try:
-#             if debug: print 'Query (no args): %s' % query
+            if debug: print 'Query (no args): %s' % query
             cursor = connection.execute(query)
             connection.commit()
         except sqlite.Error, e: 
@@ -437,12 +439,12 @@ def execute_query(query, query_arguments=None):
             print 'Query: %s' % query
     else:
         try:
-#             if debug: print 'Query: %s\nArgs: %s' % (query, query_arguments)
+            if debug: print 'Query: %s\nArgs: %s' % (query, query_arguments)
             cursor = connection.execute(query, query_arguments)
             connection.commit()            
         except sqlite.Error, e: 
-            print "Query error (with parameters): ", e.args[0]
-            print 'Query: %s\nArgs:%s' % (query, query_arguments)
+            if debug: print "Query error (with parameters): ", e.args[0]
+            if debug: print 'Query: %s\nArgs:%s' % (query, query_arguments)
     return cursor
 connector = execute_query
 
@@ -1515,6 +1517,7 @@ class User(DatabaseObject):
         account -- Account object to search for
         order_by_most_recent -- Order the returned values (default True)
         keyword_list -- List of terms to search for in the description
+            (using the LIKE comparison operator)
         begin_date -- A datetime.datetime object for the start of
             the date range
         end_date -- A datetime.datetime object for the end of the date
@@ -1546,6 +1549,10 @@ class User(DatabaseObject):
                             end_date.strftime(date_format)))
         if root_id is not None:
             filters.append((transaction_table['root_id'], root_id))
+        if keyword_list is not None:
+            for keyword in keyword_list:
+                filters.append(('LIKE', transaction_table['description'],
+                                '%%%s%%' % keyword))
         if order_by_most_recent is not None:
             if order_by_most_recent:
                 order = '%s DESC' % transaction_table['date']
@@ -2096,8 +2103,8 @@ class Budse(object):
 
         """
         if interactive:
-            prompt = ('Search\n\n1 - Date Range\n2 - Date\n3 - ID\n%s\n\nChoice:' % 
-                      meta_actions)
+            prompt = ('Search\n\n1 - Date Range\n2 - Date\n3 - ID\n4 - Keywords\n'
+                      '%s\n\nChoice:' % meta_actions)
             try:
                 choice = _handle_input(prompt)
                 if choice == '1':
@@ -2110,16 +2117,21 @@ class Budse(object):
                     unique_id = _ask_amount(type=int,
                                             prompt='Unique ID of transaction: ')
                     limit = 1
+                elif choice == '4':
+                    done = False
+                    print 'Transaction description matching all keywords:\n'
+                    if keywords is None:
+                        keywords = []
+                    while not done:
+                        keywords.append(_ask_string('Keyword: '))
+                        done = _confirm(prompt='Done entering keywords?',
+                                        default=True)
+                    if _confirm(prompt='Limit transactions to search for?'):
+                        limit = _ask_amount(type=int, prompt='Limit: ')
+                    
             except MenuError:
                 return
 
-        #TODO 4 prompt user for parameters
-        # specific transaction id
-        # keywords
-        # date
-
-        # put prompting here and break out the parameterized function call
-        # to another function
         return self.user.get_transactions(subaccount=subaccount, 
                                           order_by_most_recent=most_recent,
                                           limit=limit,
