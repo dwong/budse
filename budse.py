@@ -38,9 +38,6 @@ parser.add_option('-d', '--debug',
 opts, args = parser.parse_args()
 
 debug = opts.debug
-#if debug and opts.database == default_database:
-#    database_file = 'test.db'
-#else:
 database_file = opts.database
 
 account_table = {'table': 'accounts', 'id': 'account_id', 'user': 'user_id',
@@ -428,7 +425,6 @@ def execute_query(query, query_arguments=None):
 
     """
     #TODO 20 check out pysqlite using connection as context manager
-#    if debug: print 'Executing query: %s\nWith parameters: %s' % (query, query_arguments)
     if query_arguments is None:
         try:
             if debug: print 'Query (no args): %s' % query
@@ -1246,7 +1242,7 @@ class User(DatabaseObject):
                 if _confirm('Add deduction: $%0.2f (%s)?' % (amount,
                                                              description)):
                     deduction_choices[len(deductions)+1] = (amount, description)
-#                    status = 'Deduction added'
+                    status = 'Deduction added'
                     break
             elif int(choice) in deduction_choices:
                 amount, description = deduction_choices[int(choice)]
@@ -1264,20 +1260,20 @@ class User(DatabaseObject):
                     if _confirm('Change amount from $%0.2f to $%0.2f?' %
                                 (amount, new_amount)):
                         deduction_choices[int(choice)] = (new_amount, description)
-#                        status = 'Deduction amount changed'
+                        status = 'Deduction amount changed'
                         break
                 elif option == '2':
                     new_description = _ask_string()
                     if _confirm('Change description from "%s" to "%s"?' %
                                 (description, new_description)):
                         deduction_choices[int(choice)] = (amount, new_description)
-#                        status = 'Deduction description changed'
+                        status = 'Deduction description changed'
                         break
                 elif option == '3' and _confirm('Are you sure that you want '
                                           'to delete this deduction:\n%s - %s\n' %
                                           (amount, description), default=False):
                     del deduction_choices[int(choice)]
-#                    status = 'Deduction deleted'
+                    status = 'Deduction deleted'
                     break
             else:
                 status = 'Invalid Choice'
@@ -2358,27 +2354,31 @@ class Budse(object):
         """Prompt user for dates and output format to create a report from.
 
         """
-        prompt = ('Create Report\n\n1 - Date Range\n%s\n%s\n\nChoice:' % 
-                  (meta_actions, self.status))
         while 1:
+            prompt = ('Create Report\n\n1 - Date Range\n%s\n%s\n\nChoice: ' % 
+                      (meta_actions, self.status))
+            clear_screen()
             try:
                 choice = _handle_input(prompt)
                 if choice == '1':
                     self._create_report_by_date()
                     break
+                else:
+                    self.status = 'Invalid choice'
             except MenuError:
+                self.status = 'Report canceled'
                 return
 
-    def _create_report_by_date(self, format='csv'):
+    def _create_report_by_date(self, format='tsv'):
         """Create a report for a specified date range.
 
         Keyword arguments:
-        format -- How the report will be output (default csv)
+        format -- How the report will be output (default tsv)
 
         """
-        timestamp_string = '%Y%m%d.%H%M%S'
+        # Output as Delimiter-Separated Values, xls extension better supported
+        extension = 'xls'
         today = datetime.datetime.today()
-        report_timestamp = datetime.datetime.now().strftime(timestamp_string)
         if today.day == 1:
             default = today + datetime.timedelta(month=-1)
         else:
@@ -2386,90 +2386,85 @@ class Budse(object):
         begin_date = self._ask_date(prompt='Date of start of report',
                                     default_date=default)
         end_date = self._ask_date(prompt='Date of end of report')
-        filename = 'Report_%s.csv' % report_timestamp
-        prompt = 'Output report to %s/%s' % (os.getcwd(), filename)
-        output_file = self._ask_filepath(filename=filename, prompt=prompt)
-        delimiter = ','
+        filename = 'Budse_Report_%s%s%s-%s%s%s.%s' % (begin_date.year, 
+                            begin_date.month, begin_date.day, end_date.year,
+                                    end_date.month, end_date.day, extension)
+        default_filepath = os.getcwd()
+        prompt = 'Output report to %s/%s?' % (default_filepath, filename)
+        output_file = self._ask_filepath(filename=filename, prompt=prompt,
+                                         default_path=default_filepath)
+        if format == 'tsv':
+            delimiter = '\t'
         with open(output_file, 'w') as report_file:
-            if format == 'csv':
-                report_file.write('Account Name%sDeposits%s'
-                                  'Withdrawals%sNet%s%s'
-                                  'Report for %s - %s\n' %
-                                   (delimiter, delimiter, delimiter,
-                                    delimiter, delimiter,
-                                   (begin_date.strftime(output_date)),
-                                    (end_date.strftime(output_date))))
-                root_transaction_groups = self.search(limit=None,
-                                                      begin_date=begin_date,
-                                                      end_date=end_date,
-                                                      most_recent=False,
-                                                      interactive=False)
-                account_summary = {}
-                for account in self.user.accounts:
-                    account_summary[account.id] = (account, 0.00, 0.00, 0.00)
-                deductions = 0.00
-                transaction_log = ('Transaction Log\n\n'
-                                   'Date%sAction%sAmount%sAccount'
-                                   '%sDescription\n' % (delimiter, 
-                                   delimiter, delimiter, delimiter))
-                for root_transaction, transactions in root_transaction_groups:
-                    transactions.insert(0, root_transaction)
-                    for transaction in transactions:
-                        action = transaction.action
-                        if transaction.account is not None:
-                            account, deposits, withdrawals, net = \
-                                     account_summary[transaction.account.id]
-                            if action == transaction_table['deposit']:
-                                deposits += transaction.amount
-                                net += transaction.amount
-                                output_action = 'Deposit'
-                            elif action == transaction_table['withdrawal']:
-                                withdrawals += transaction.amount
-                                net -= transaction.amount
-                                output_action = 'Withdrawal'
-                            account_summary[transaction.account.id] = \
-                                        (account, deposits, withdrawals, net)
-                            account_name = transaction.account.name
-                        elif action == transaction_table['deduction']:
-                            deductions += transaction.amount
-                            output_action = 'Deduction'
-                            account_name = 'N/A'
-                        elif action == transaction_table['transfer']:
-                            account_name = 'N/A'
-                            output_action = 'Transfer'
-                        else:
-                            output_action = 'Informational'
-                            account_name = 'Whole Account'
-                        transaction_log += ('%s%s%s%s%0.2f%s%s%s%s\n' % 
-                                       (transaction.date.strftime(output_date),
-                                        delimiter,
-                                        output_action,
-                                        delimiter,
-                                        transaction.amount,
-                                        delimiter,
-                                        account_name,
-                                        delimiter,
-                                        transaction.description))
-                total_deposits = total_withdrawals = total_net = 0.00
-                for k, v in account_summary.iteritems():
-                    account, deposits, withdrawals, net = v
-                    report_file.write('%s%s%0.2f%s%0.2f%s%0.2f\n' %
-                                      (account.name, delimiter,
-                                       deposits, delimiter,
-                                       withdrawals, delimiter,
-                                       net))
-                    total_deposits += deposits
-                    total_withdrawals += withdrawals
-                    total_net += net
-                report_file.write('\n\nTotal Deposits:%s%0.2f\n'
-                                  'Total Withdrawals:%s%0.2f\n'
-                                  'Total Deductions:%s%0.2f\n\n'
-                                  'Net for period:%s%0.2f\n'% 
-                                  (delimiter, total_deposits,
-                                   delimiter, total_withdrawals,
-                                   delimiter, deductions,
-                                   delimiter, total_net))
-                report_file.write('\n\n%s' % transaction_log)
+            report_file.write('Account Name%sDeposits%sWithdrawals%sNet%s%s'
+                              'Report for %s - %s\n' % (delimiter, delimiter,
+                                             delimiter, delimiter, delimiter,
+                                             (begin_date.strftime(output_date)),
+                                             (end_date.strftime(output_date))))
+            root_transaction_groups = self.search(limit=None,
+                                                  begin_date=begin_date,
+                                                  end_date=end_date,
+                                                  most_recent=False,
+                                                  interactive=False)
+            account_summary = {}
+            for account in self.user.accounts:
+                account_summary[account.id] = (account, 0.00, 0.00, 0.00)
+            deductions = 0.00
+            transaction_log = ('Transaction Log\n\nDate%sAction%sAmount%s'
+                               'Account%sDescription\n' % (delimiter, 
+                                delimiter, delimiter, delimiter))
+            for root_transaction, transactions in root_transaction_groups:
+                transactions.insert(0, root_transaction)
+                for transaction in transactions:
+                    action = transaction.action
+                    if transaction.account is not None:
+                        account, deposits, withdrawals, net = \
+                                 account_summary[transaction.account.id]
+                        if action == transaction_table['deposit']:
+                            deposits += transaction.amount
+                            net += transaction.amount
+                            output_action = 'Deposit'
+                        elif action == transaction_table['withdrawal']:
+                            withdrawals += transaction.amount
+                            net -= transaction.amount
+                            output_action = 'Withdrawal'
+                        account_summary[transaction.account.id] = \
+                                     (account, deposits, withdrawals, net)
+                        account_name = transaction.account.name
+                    elif action == transaction_table['deduction']:
+                        deductions += transaction.amount
+                        output_action = 'Deduction'
+                        account_name = 'N/A'
+                    elif action == transaction_table['transfer']:
+                        account_name = 'N/A'
+                        output_action = 'Transfer'
+                    else:
+                        output_action = 'Informational'
+                        account_name = 'Whole Account'
+                    transaction_log += ('%s%s%s%s%0.2f%s%s%s%s\n' % 
+                                        (transaction.date.strftime(output_date),
+                                         delimiter, output_action, delimiter,
+                                         transaction.amount, delimiter,
+                                         account_name, delimiter,
+                                         transaction.description))
+            total_deposits = total_withdrawals = total_net = 0.00
+            for k, v in account_summary.iteritems():
+                account, deposits, withdrawals, net = v
+                report_file.write('%s%s%0.2f%s%0.2f%s%0.2f\n' %
+                                  (account.name, delimiter, deposits, delimiter,
+                                   withdrawals, delimiter, net))
+                total_deposits += deposits
+                total_withdrawals += withdrawals
+                total_net += net
+            report_file.write('\n\nTotal Deposits:%s%0.2f\nTotal Withdrawals:%s'
+                              '%0.2f\nTotal Deductions:%s%0.2f\n\nNet for '
+                              'period:%s%0.2f\n' % (delimiter, total_deposits,
+                                                    delimiter,
+                                                    total_withdrawals,
+                                                    delimiter, deductions,
+                                                    delimiter, total_net))
+            report_file.write('\n\n%s' % transaction_log)
+        self.status = '%s successfully created' % output_file
 
     def _ask_filepath(self, filename, prompt, default_path=os.getcwd()):
         """Prompt user for a location to output a file.
@@ -2480,18 +2475,21 @@ class Budse(object):
         default_path -- Default directory to use to output the file to
         
         """
+        filepath = None
         if _confirm(prompt=prompt, default=True):
             filepath = '%s/%s' % (default_path, filename)
         else:
-            #TODO 3 prompt for filepath
-            pass
+            while filepath is None:
+                temporary_path = _ask_string('Directory to output %s to? ' %
+                                             filename)
+                if os.path.exists(temporary_path):
+                    filepath = '%s/%s' % (temporary_path, filename)
+                else:
+                    print 'Invalid path'
         return filepath
 
-    def modify_user_settings(self, clear):
+    def modify_user_settings(self):
         """Modify any of the user's settings.
-
-        Keyword parameters:
-        clear -- Function object to clear the screen
 
         Menu to access any of the saved settings for each user.
 
@@ -2551,71 +2549,6 @@ class Budse(object):
 #                              'the gross amount')
 #             status = active
 #         return gross, modify_status
-
-    
-#     def _reconfigure_subaccount_amounts(self, subaccount, new=False):
-#         """Modify amounts for accounts to maintain requirements.
-
-#         Keyword arguments:
-#         subaccount -- Reconfigure amounts based on this changed account
-#         new -- Whether the account added was a new account (default False
-#             account already existed)
-
-#         Returns:
-#         List of changed Account objects
-        
-#         """
-#         if subaccount.type != account_table['percentage_type']:
-#             accounts = self.user.accounts
-#             accounts.append(subaccount)
-#             return accounts
-#         initial_prompt = 'Reconfigure Account Amounts\n\n'
-#         if not subaccount.gross:
-#             # Need to always keep net percentage accounts' total at 100%
-#             accounts = self.user.filter_accounts(fixed=False)
-#             initial_prompt += ('Modify the net percentage accounts so '
-#                               'that they are exactly 100%\n')
-#         else:
-#             # Total them up, they cannot be 100% or greater
-#             accounts = self.user.filter_accounts(fixed=False, gross=True)
-#             initial_prompt += ('Modify the gross percentage accounts so '
-#                               'that they are under 100%\n')
-#         if new:
-#             accounts.append(subaccount)
-
-#         # Maintain temporary dictionary before save is confirmed
-#         temporary_accounts = {}
-#         for counter, account in zip(range(len(accounts)), accounts):
-#             temporary_accounts[counter+1] = account
-#         while 1:
-#             total = 0.00
-#             prompt = '%s\n' % initial_prompt
-#             for counter in range(1, len(temporary_accounts)+1):
-#                 prompt += ('%s - %s (%0.2f%%)\n' % (counter,
-#                            temporary_accounts[counter].name,
-#                            temporary_accounts[counter].amount * 100))
-#                 total += temporary_accounts[counter].amount
-#             prompt += 'Total:%0.2f\n%s\n\nModify: ' % (total*100, self.status)
-#             if ((not subaccount.gross and total == 1.00) or
-#                 (subaccount.gross and total <= 1.00)):
-#                 break
-#             choice = _handle_input(prompt, float)
-#             if choice in temporary_accounts:
-#                 try:
-#                     new_amount = _ask_amount()
-#                     prompt = 'Use %0.2f for account \'%s\'' % (new_amount,
-#                                              temporary_accounts[choice].name)
-#                     if _confirm(prompt, default=True):
-#                         temporary_accounts[choice].amount = new_amount
-#                         self.status = 'Account modified'
-#                 except MenuError:
-#                     self.status = ('Cancel account change, '
-#                                    'still need to reconfigure')
-#             else:
-#                 self.status = 'Invalid choice'
-#         temporary_accounts += other_accounts
-#         accounts = [v for k, v in temporary_accounts.iteritems()]
-#         return accounts
         
     def modify_subaccount(self):
         """Allow the user to modify aspects of an existing subaccount.
@@ -3067,7 +3000,7 @@ while 1:
         clear_screen()
         print 'hold up'
     elif action == '8':
-        app.modify_user_settings(clear_screen)
+        app.modify_user_settings()
     else:
         app.status = 'Invalid action'
     clear_screen()
