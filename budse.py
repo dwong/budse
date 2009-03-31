@@ -2100,7 +2100,7 @@ class Budse(object):
         """
         if interactive:
             prompt = ('Search\n\n1 - Date Range\n2 - Date\n3 - ID\n4 - Keywords\n'
-                      '%s\n\nChoice:' % meta_actions)
+                      '%s\n\nChoice: ' % meta_actions)
             try:
                 choice = _handle_input(prompt)
                 if choice == '1':
@@ -2144,12 +2144,13 @@ class Budse(object):
         transactions -- List of Transaction objects to output
         
         """
-        for root_transaction, group in transactions:
-            print '-------Transaction ID: #%d-------' % root_transaction.id
-            print root_transaction
-            for item in group:
-                item.indent = '   '
-                print item
+        if transactions is not None:
+            for root_transaction, group in transactions:
+                print '-------Transaction ID: #%d-------' % root_transaction.id
+                print root_transaction
+                for item in group:
+                    item.indent = '   '
+                    print item
 
     def make_deposit(self):
         """Initiate a new deposit.
@@ -2340,7 +2341,7 @@ class Budse(object):
                 if user_total_length > longest_total:
                     longest_total = user_total_length
             if include_all:
-                print 'Account balances:'
+                print 'Account balances: '
                 for account_name, account_total in account_totals:
                     print '%s = %s' % (account_name.ljust(longest_name),
                                        account_total.rjust(longest_total))
@@ -2658,7 +2659,7 @@ class Budse(object):
             all_accounts = self.user.accounts
         accounts = {}
         clear_screen()
-        print '\nSubaccounts:'
+        print '\nSubaccounts: '
         counter = 0
         for account in all_accounts:
             counter += 1
