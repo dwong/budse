@@ -49,8 +49,8 @@ account_table = {'table': 'accounts', 'id': 'account_id', 'user': 'user_id',
                  'gross_true': 1, 'gross_false': 0,
                  'active': 1, 'inactive': 0
                  }
-#TODO 10 turn off prompting for deducting from gross
-#TODO 8 deduction table instead of within user table?
+#TODO 10 turn off prompting for deducting from gross?
+#TODO 8 deduction table instead of within user table
 user_table = {'table': 'users', 'id': 'user_id', 'name': 'user_name',
               'status': 'status', 'timestamp': 'last_login',
               'deductions': 'automatic_deductions', 
@@ -1225,12 +1225,12 @@ class User(DatabaseObject):
         status = ''
         while 1:
             clear_screen()
-            prompt = 'Deductions:\n\n'
+            prompt = 'Deductions (must save changes):\n\n'
             for counter in range(1, len(deductions)+1):
                 amount, description = deduction_choices[counter]
                 prompt += '%d - $%0.2f (%s)\n' % (counter, amount, description)
-            prompt += ('n - New Deduction\n%s\n%s\n\nModify: ' % (meta_actions,
-                                                                  status))
+            prompt += ('n - New Deduction\ns - Save Changes\n%s\n%s\n\nModify: '
+                       % (meta_actions, status))
             status = ''
             try:
                 choice = _handle_input(prompt)
@@ -1239,11 +1239,13 @@ class User(DatabaseObject):
             if choice.upper() == 'N':
                 amount = _ask_amount()
                 description = _ask_string()
-                if _confirm('Add deduction: $%0.2f (%s)?' % (amount,
-                                                             description)):
+                if _confirm('Add deduction: $%0.2f (%s)?' %
+                            (amount, description), True):
                     deduction_choices[len(deductions)+1] = (amount, description)
                     status = 'Deduction added'
-                    break
+            elif choice.upper() == 'S':
+                status = 'Deduction changes saved'
+                break
             elif int(choice) in deduction_choices:
                 amount, description = deduction_choices[int(choice)]
                 inner_prompt = ('1 - Change Amount ($%0.2f)\n'
@@ -1258,23 +1260,20 @@ class User(DatabaseObject):
                 if option == '1':
                     new_amount = _ask_amount()
                     if _confirm('Change amount from $%0.2f to $%0.2f?' %
-                                (amount, new_amount)):
+                                (amount, new_amount), True):
                         deduction_choices[int(choice)] = (new_amount, description)
                         status = 'Deduction amount changed'
-                        break
                 elif option == '2':
                     new_description = _ask_string()
                     if _confirm('Change description from "%s" to "%s"?' %
-                                (description, new_description)):
+                                (description, new_description), True):
                         deduction_choices[int(choice)] = (amount, new_description)
                         status = 'Deduction description changed'
-                        break
                 elif option == '3' and _confirm('Are you sure that you want '
                                           'to delete this deduction:\n%s - %s\n' %
-                                          (amount, description), default=False):
+                                          (amount, description)):
                     del deduction_choices[int(choice)]
                     status = 'Deduction deleted'
-                    break
             else:
                 status = 'Invalid Choice'
         deductions = []
@@ -2712,7 +2711,6 @@ class Budse(object):
         datetime.date object of desired date
 
         """
-        #TODO 5 print out using datetime.TextCalendar
         date = None
         output_format = '%Y-%m-%d'
         prompt = ('%s? (YYYY-MM-DD, default %s) ' % 
