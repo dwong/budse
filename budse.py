@@ -79,39 +79,35 @@ class Error(Exception):
 class MetaError(Error):
     """Exception raised for meta actions in the input.
     """
-    def __init__(self, expression, message):
+    def __init__(self, expression):
         """Initialization method.
 
         Keyword arguments:
         expression -- Input that caused the exception to be raised
-        message -- Explanation of error
          
         """
         self.expression = expression
-        self.message = message
 
     def __str__(self):
-        return '[%s] - %s' % (self.expression, self.message)
+        return '%s' % (self.expression)
 
 class MenuError(MetaError):
     """Exception raised to cancel out of a menu.
     """
-    def __init__(self, expression, message):
+    def __init__(self, expression):
         self.expression = expression
-        self.message = message
 
     def __str__(self):
-        return '[%s] - %s' % (self.expression, self.message)
+        return '%s' % (self.expression)
 
 class ConversionError(MetaError):
     """Exception raised converting to the type specified.
     """
-    def __init__(self, expression, message):
+    def __init__(self, expression):
         self.expression = expression
-        self.message = message
 
     def __str__(self):
-        return '[%s] - %s' % (self.expression, self.message)
+        return '%s' % (self.expression)
 
       
 # Actions that have meaning for all menus
@@ -138,13 +134,14 @@ def _handle_input(prompt, base_type=str):
     except KeyboardInterrupt:
         raise SystemExit('Quitting the Budse')
     if str(base_input).upper() == 'C':
-        raise MenuError(base_input, 'Cancel current menu')
+        raise MenuError('Cancel current menu')
     elif str(base_input).upper() == 'Q':
         raise SystemExit('Quitting the Budse')
     try:
         expression = base_type(base_input)
     except Exception, e:
-        raise ConversionError(base_input, str(e))
+        raise ConversionError('Error converting %s to %s' % (base_input,
+                                                             base_type))
     return expression
 
 def _confirm(prompt, default=False):
@@ -2125,7 +2122,7 @@ class Budse(object):
                         limit = _ask_amount(type=int, prompt='Limit: ')
                     
             except MenuError:
-                return
+                raise
 
         return self.user.get_transactions(subaccount=subaccount, 
                                           order_by_most_recent=most_recent,
@@ -2990,14 +2987,18 @@ while 1:
         app.make_transfer()
     elif action == '5':
         clear_screen()
-        app.output_transactions(app.search())
-        raw_input(continue_string)
+        try:
+            app.output_transactions(app.search())
+            raw_input(continue_string)
+        except:
+            app.status = 'Canceled search'
     elif action == '6':
         clear_screen()
         app.create_report()
     elif action == '7':
-        clear_screen()
-        print 'hold up'
+        app.status = 'Currently unimplemented!'
+        #TODO 2 ensure reverse_transaction is correct!
+        #app.reverse_transaction(some_id)
     elif action == '8':
         app.modify_user_settings()
     else:
