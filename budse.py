@@ -2990,7 +2990,7 @@ while 1:
         try:
             app.output_transactions(app.search())
             raw_input(continue_string)
-        except:
+        except MenuError:
             app.status = 'Canceled search'
     elif action == '6':
         clear_screen()
