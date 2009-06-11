@@ -8,7 +8,7 @@
 #     Budget finances on the console
 #
 # Requirements:
-#     1) Python 2.5 - not compatible with future versions (yet)
+#     1) Python 2.5.4 - not compatible with future versions (yet)
 #     2) Sqlite3
 #     3) Courage (for the bugs)
 #
@@ -350,10 +350,8 @@ def update(changes, target, filters, limit=None):
     query string, tuple of parameters
     
     """
-    query = 'UPDATE '
     table_string, implicit_joins = table(target)
-    query += table_string
-    query += 'SET '
+    query = 'UPDATE 'Ê+ table_string + ' SET '
     parameters = []
     for column, value in changes:
         query += '%s=? ,' % column
@@ -364,7 +362,7 @@ def update(changes, target, filters, limit=None):
     query += where_string
     parameters += where_values
     if limit is not None:
-        query += 'LIMIT %d' % limit
+        query += ' LIMIT %d ' % limit
     return query, tuple(parameters)
 
 def delete(target, filters):
@@ -503,6 +501,7 @@ class DatabaseObject(object):
 #Another idea would be to create another access table that would
 #essentially dictate the coherency protocol to keep data consistent
 #across all instances.
+
     @staticmethod
     def _get_function(column_name):
         """Return closure for retrieving a column from a specified table.
