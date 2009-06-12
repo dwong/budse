@@ -71,12 +71,12 @@ transaction_table = {'table': 'transactions', 'id': 'transaction_id',
                      'active': 1, 'inactive': 0
                      }
 
-class Error(Exception):
+class BudseException(Exception):
     """Base class for exceptions in this module.
     """
     pass
 
-class MetaError(Error):
+class MetaException(BudseException):
     """Exception raised for meta actions in the input.
     """
     def __init__(self, expression):
@@ -91,7 +91,7 @@ class MetaError(Error):
     def __str__(self):
         return '%s' % (self.expression)
 
-class MenuError(MetaError):
+class CancelException(MetaException):
     """Exception raised to cancel out of a menu.
     """
     def __init__(self, expression):
@@ -100,7 +100,16 @@ class MenuError(MetaError):
     def __str__(self):
         return '%s' % (self.expression)
 
-class ConversionError(MetaError):
+class DoneException(MetaException):
+    """Exception raised when completed with input.
+    """
+    def __init__(self, expression):
+        self.expression = expression
+
+    def __str__(self):
+        return '%s' % (self.expression)
+
+class ConversionException(MetaException):
     """Exception raised converting to the type specified.
     """
     def __init__(self, expression):
@@ -111,7 +120,7 @@ class ConversionError(MetaError):
 
       
 # Actions that have meaning for all menus
-meta_actions = 'c - Cancel / Done\nq - Quit Program'
+meta_actions = 'c - Cancel\nd - Done\nq - Quit Program'
 output_date = '%m/%d/%Y'
 def _handle_input(prompt, base_type=str):
     """Take all input, passing back errors as appropriate.
@@ -134,13 +143,15 @@ def _handle_input(prompt, base_type=str):
     except KeyboardInterrupt:
         raise SystemExit('Quitting the Budse')
     if str(base_input).upper() == 'C':
-        raise MenuError('Cancel current menu')
+        raise CancelException('Cancel current menu')
+    elif str(base_input).upper() == 'D':
+        raise DoneException('User is done with input')
     elif str(base_input).upper() == 'Q':
         raise SystemExit('Quitting the Budse')
     try:
         expression = base_type(base_input)
     except Exception, e:
-        raise ConversionError('Error converting %s to %s' % (base_input,
+        raise ConversionException('Error converting %s to %s' % (base_input,
                                                              base_type))
     return expression
 
@@ -200,7 +211,7 @@ def _ask_amount(prompt='Amount? ', type=float, require_input=True):
     while amount is None:
         try:
             amount = _handle_input(prompt, type)
-        except ConversionError:
+        except ConversionException:
             print 'Invalid value'
     # Only keep 2 decimal places of precision for these floats
     return round(amount, 2)
@@ -351,7 +362,7 @@ def update(changes, target, filters, limit=None):
     
     """
     table_string, implicit_joins = table(target)
-    query = 'UPDATE 'Ê+ table_string + ' SET '
+    query = 'UPDATE ' + table_string + ' SET '
     parameters = []
     for column, value in changes:
         query += '%s=? ,' % column
@@ -668,7 +679,7 @@ class Account(DatabaseObject):
             else:
                 self.description = _ask_string()
                 status = 'Now have an account description'
-        except MenuError:
+        except (CancelException, DoneException):
             pass
         return status
 
@@ -1012,7 +1023,7 @@ class User(DatabaseObject):
                         default=True):
                 self.name = new_name
                 status = 'Changed login name to %s' % new_name
-        except MenuError:
+        except (CancelException, DoneException):
             pass
         return status
 
@@ -1230,7 +1241,7 @@ class User(DatabaseObject):
             status = ''
             try:
                 choice = _handle_input(prompt)
-            except MenuError:
+            except (CancelException, DoneException):
                 break
             if choice.upper() == 'N':
                 amount = _ask_amount()
@@ -1250,7 +1261,7 @@ class User(DatabaseObject):
                                 (amount, description))
                 try:
                     option = _handle_input(inner_prompt)
-                except MenuError:
+                except (CancelException, DoneException):
                     continue
                 status = 'Deduction unchanged'
                 if option == '1':
@@ -1297,7 +1308,7 @@ class User(DatabaseObject):
                                      'provide a list of default deductions'))
                 elif action == '2':
                     self.deductions = self.reconfigure_deductions(self.deductions)
-            except MenuError:
+            except (CancelException, DoneException):
                 break
             if existing_deductions != self.deductions:
                 status = 'Deductions changed'
@@ -1327,8 +1338,11 @@ class User(DatabaseObject):
                 status = ''
                 try:
                     choice = _handle_input(prompt)
-                except MenuError:
+                except DoneException:
                     break
+                except CancelException:
+                    deductions = []
+                    raise
                 if choice == '1':
                     amount = _ask_amount()
                     description = _ask_string()
@@ -1458,7 +1472,7 @@ class User(DatabaseObject):
                                         (new_amount, account_name), True):
                                 temporary_accounts[choice].amount = new_amount
                                 status = '\'%s\' modified' % (account_name)
-                        except MenuError:
+                        except (CancelException, DoneException):
                             status = 'Canceled change, continue to reconfigure'
                     else:
                         status = 'Invalid choice'
@@ -2120,7 +2134,7 @@ class Budse(object):
                     if _confirm(prompt='Limit transactions to search for?'):
                         limit = _ask_amount(type=int, prompt='Limit: ')
                     
-            except MenuError:
+            except (CancelException, DoneException):
                 raise
 
         return self.user.get_transactions(subaccount=subaccount, 
@@ -2186,7 +2200,7 @@ class Budse(object):
             else:
                 new_deposit.discard()
                 self.status = 'Deposit canceled'
-        except MenuError:
+        except (CancelException, DoneException):
             self.status = 'Deposit canceled'
 
     def make_withdrawal(self):
@@ -2219,7 +2233,7 @@ class Budse(object):
             else:
                 new_withdrawal.discard()
                 self.status = 'Withdrawal canceled'
-        except MenuError:
+        except (CancelException, DoneException):
             self.status = 'Withdrawal canceled'
 
     def make_transfer(self):
@@ -2268,7 +2282,7 @@ class Budse(object):
             else:
                 transfer.discard()
                 self.status = 'Transfer canceled'
-        except MenuError:
+        except (CancelException, DoneException):
             self.status = 'Transfer canceled'
     
     def reverse_transaction(self, root_id):
@@ -2307,7 +2321,7 @@ class Budse(object):
                 try:
                     subaccount = self._ask_subaccount(
                         prompt='Get balance for which subaccount: ')
-                except MenuError:
+                except (CancelException, DoneException):
                     print 'Interrupted balance check'
                     return
             subaccount_total = '$%0.2f' % subaccount.total
@@ -2361,7 +2375,7 @@ class Budse(object):
                     break
                 else:
                     self.status = 'Invalid choice'
-            except MenuError:
+            except (CancelException, DoneException):
                 self.status = 'Report canceled'
                 return
 
@@ -2522,7 +2536,7 @@ class Budse(object):
                 else:
                     self.status = 'Invalid action'
                 self.user.save()
-            except MenuError:
+            except (CancelException, DoneException):
                 break
 
 #     def _modify_user_gross(self):
@@ -2553,7 +2567,7 @@ class Budse(object):
         try:
             subaccount = (self._ask_subaccount(prompt=prompt,
                                                active_only=False))
-        except MenuError:
+        except (CancelException, DoneException):
             print 'Halted modification'
             return
         changed = False
@@ -2569,7 +2583,7 @@ class Budse(object):
                              status_modification, meta_actions, self.status)
             try:
                 action = _handle_input(prompt)
-            except MenuError:
+            except (CancelException, DoneException):
                 break
             try:
                 if action == '1':
@@ -2584,7 +2598,7 @@ class Budse(object):
                         try:
                             self.status += ', ' + (subaccount.modify_amount(
                                 loop=True, type_change=True))
-                        except MenuError:
+                        except (CancelException, DoneException):
                             pass
                         finally:
                             self.user.accounts, status = \
@@ -2608,7 +2622,7 @@ class Budse(object):
                 else:
                     self.status = 'Invalid action'
                 subaccount.save()
-            except MenuError:
+            except (CancelException, DoneException):
                 self.status = 'Canceled action'
                 continue
         
@@ -2633,7 +2647,7 @@ class Budse(object):
             else:
                 subaccount.discard()
                 self.status = 'Did not add account %s' % subaccount.name
-        except MenuError:
+        except (CancelException, DoneException):
             self.status = 'Canceled subaccount addition'
 
     def _ask_subaccount(self, prompt='Perform transaction using ' +
@@ -2669,7 +2683,7 @@ class Budse(object):
                     subaccount = accounts[id]
                 else:
                     print 'Invalid choice'
-            except ConversionError:
+            except ConversionException:
                 print 'Invalid input'
         return subaccount
 
@@ -2802,7 +2816,7 @@ def _create_user(newbie=False):
         account = None
         try:
             account = _create_account(new_user)
-        except MenuError:
+        except (CancelException, DoneException):
             pass
         else:
             clear_screen()
@@ -2850,20 +2864,20 @@ def opening_prompt(prompt='Username, N\'ew, Q\'uit: '):
     if not users:
         try:
             user = _create_user(newbie=True)
-        except MenuError:
+        except (CancelException, DoneException):
             print 'How sad, you\'re done here.'
     else:
         while user is None:
             try:
                 input_user = str(_handle_input(prompt)).upper()
-            except MenuError:
+            except (CancelException, DoneException):
                 # Ignore C'ancel at this prompt
                 input_user = 'C'
             if input_user == 'N':
                 try:
                     user = _create_user()
-                except MenuError:
-                    'Try again'
+                except (CancelException, DoneException):
+                    print 'Try logging in again'
             elif input_user in users:
                 user = users[input_user]
             else:
@@ -2955,9 +2969,9 @@ main_user.save()
 app = Budse(main_user)
 app.status =  ('Welcome to Budse, %s.  Last login: %s' %
                (main_user.name, last_login))
-#TODO 4 what to do if interrupted modifying user settings, especially things
-#  that need to be configured (e.g., net percentage amounts)
-#  force user to correct these and any other exceptions from User class
+# Force the user to reconfigure the accounts, which will be silent as long
+# as everything is configured correctly
+main_user.accounts, trash = main_user._reconfigure_subaccounts()
 clear_screen()
 while 1:
     prompt = ('Main Menu\n\n1 - Deposit\n2 - Withdraw\n3 - Balance\n'
@@ -2967,7 +2981,7 @@ while 1:
     app.status = ''
     try:
         action = _handle_input(prompt)
-    except MenuError:
+    except (CancelException, DoneException):
         app.status = 'Main menu, cannot backup any further'
         clear_screen()
         continue
@@ -2989,7 +3003,7 @@ while 1:
         try:
             app.output_transactions(app.search())
             raw_input(continue_string)
-        except MenuError:
+        except (CancelException, DoneException):
             app.status = 'Canceled search'
     elif action == '6':
         clear_screen()
