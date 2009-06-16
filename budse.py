@@ -1215,92 +1215,103 @@ class User(DatabaseObject):
     deductions = property(get_ded, set_ded, del_ded, 'Saved deductions')
 
     def reconfigure_deductions(self, deductions):
-        """Reconfigure the existing deductions.
+        """Reconfigure a list of deductions.
 
         Keyword arguments:
-        deductions -- List of (amount, description) deductions that are existing
+        deductions -- List of (amount, description) tuples
         
         Returns:
-        deductions -- List of (amount, description) tuples to be used as a
-            user's deductions
+        deductions -- List of (amount, description) tuples
         
         """
+        save_results = True
+        status = ''
         deduction_choices = {}
         for counter, (amount, description) in zip(range(1, len(deductions)+1),
                                                   deductions):
             deduction_choices[counter] = (amount, description)
-        status = ''
         while 1:
             clear_screen()
-            prompt = 'Deductions (must save changes):\n\n'
-            for counter in range(1, len(deductions)+1):
-                amount, description = deduction_choices[counter]
-                prompt += '%d - $%0.2f (%s)\n' % (counter, amount, description)
-            prompt += ('n - New Deduction\ns - Save Changes\n%s\n%s\n\nModify: '
+            prompt = 'Deductions (changes not saved until done):\n\n'
+            for key, (amount, description) in deduction_choices.items():
+                prompt += '%d - $%0.2f (%s)\n' % (key, amount, description)
+            prompt += ('n - New Deduction\n%s\n%s\n\nModify: '
                        % (meta_actions, status))
             status = ''
             try:
                 choice = _handle_input(prompt)
-            except (CancelException, DoneException):
+            except DoneException:
                 break
-            if choice.upper() == 'N':
-                amount = _ask_amount()
-                description = _ask_string()
-                if _confirm('Add deduction: $%0.2f (%s)?' %
-                            (amount, description), True):
-                    deduction_choices[len(deductions)+1] = (amount, description)
-                    status = 'Deduction added'
-            elif choice.upper() == 'S':
-                status = 'Deduction changes saved'
+            except CancelException:
+                save_results = False
                 break
-            elif int(choice) in deduction_choices:
-                amount, description = deduction_choices[int(choice)]
-                inner_prompt = ('1 - Change Amount ($%0.2f)\n'
-                                '2 - Change Description (%s)\n'
-                                '3 - Delete\n\nChoice: ' % 
-                                (amount, description))
-                try:
-                    option = _handle_input(inner_prompt)
-                except (CancelException, DoneException):
-                    continue
-                status = 'Deduction unchanged'
-                if option == '1':
-                    new_amount = _ask_amount()
-                    if _confirm('Change amount from $%0.2f to $%0.2f?' %
-                                (amount, new_amount), True):
-                        deduction_choices[int(choice)] = (new_amount, description)
-                        status = 'Deduction amount changed'
-                elif option == '2':
-                    new_description = _ask_string()
-                    if _confirm('Change description from "%s" to "%s"?' %
-                                (description, new_description), True):
-                        deduction_choices[int(choice)] = (amount, new_description)
-                        status = 'Deduction description changed'
-                elif option == '3' and _confirm('Are you sure that you want '
-                                          'to delete this deduction:\n%s - %s\n' %
-                                          (amount, description)):
-                    del deduction_choices[int(choice)]
-                    status = 'Deduction deleted'
-            else:
-                status = 'Invalid Choice'
-        deductions = []
-        for k, v in deduction_choices.iteritems():
-            deductions.append(v)
+            try:
+                if choice.upper() == 'N':
+                    amount = _ask_amount()
+                    description = _ask_string()
+                    if _confirm('Add deduction: $%0.2f (%s)?' %
+                                (amount, description), True):
+                        for key in range(1, len(deduction_choices)+2):
+                            if not key in deduction_choices:
+                                deduction_choices[key] = (amount, description)
+                        status = 'Deduction added'
+                elif int(choice) in deduction_choices:
+                    key = int(choice)
+                    amount, description = deduction_choices[int(choice)]
+                    inner_prompt = ('1 - Change Amount ($%0.2f)\n'
+                                    '2 - Change Description (%s)\n'
+                                    '3 - Delete\n\nChoice: ' % 
+                                    (amount, description))
+                    try:
+                        option = _handle_input(inner_prompt)
+                    except DoneException:
+                        continue
+                    status = 'Deduction unchanged'
+                    if option == '1':
+                        new_amount = _ask_amount()
+                        if _confirm('Change amount from $%0.2f to $%0.2f?' %
+                                    (amount, new_amount), True):
+                            deduction_choices[key] = (new_amount, description)
+                            status = 'Deduction amount changed'
+                    elif option == '2':
+                        new_description = _ask_string()
+                        if _confirm('Change description from "%s" to "%s"?' %
+                                    (description, new_description), True):
+                            deduction_choices[key] = (amount, new_description)
+                            status = 'Deduction description changed'
+                    elif option == '3' and _confirm('Are you sure that you '
+                                'want to delete this deduction:\n%s - %s\n' %
+                                (amount, description)):
+                        del deduction_choices[key]
+                        status = 'Deduction deleted'
+                else:
+                    status = 'Invalid Choice'
+            except CancelException:
+                status = 'Canceled action'
+                continue
+        if save_results:
+            deductions = []
+            for k, v in deduction_choices.iteritems():
+                deductions.append(v)
         return deductions
         
     def modify_deductions(self):
-        """Modify the user's saved deductions by prompting for a new list.
+        """Modify the user's saved deductions by prompting
+        for a new list.
 
         Returns:
         Status of deduction modification
 
         """
+        status = ''
         existing_deductions = self.deductions
-        prompt = ('Deductions Menu:\n\n1 - Create New List\n'
-                  '2 - Modify Existing\n%s\n\nAction: ' % meta_actions)
-        status = 'Kept existing deductions'
+        deductions_status = 'Deductions unchanged'
         while 1:
             clear_screen()
+            prompt = ('Deductions Menu:\n\n1 - Create New List\n'
+                      '2 - Modify Existing\n%s\n%s\n\nAction: ' %
+                      (meta_actions, status))
+            status = ''
             try:
                 action = _handle_input(prompt)
                 if action == '1' or len(self.deductions) == 0:
@@ -1308,12 +1319,16 @@ class User(DatabaseObject):
                                      'provide a list of default deductions'))
                 elif action == '2':
                     self.deductions = self.reconfigure_deductions(self.deductions)
+                else:
+                    status = 'Invalid choice'
             except (CancelException, DoneException):
                 break
             if existing_deductions != self.deductions:
-                status = 'Deductions changed'
+                deductions_status = 'Deductions changed'
                 break
-        return status
+            else:
+                status = 'Deductions unchanged'
+        return deductions_status
             
     def ask_deduction_list(self, prompt=('Please provide a list of deductions '
                                          'that you would like to make')):
