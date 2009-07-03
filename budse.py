@@ -2847,12 +2847,12 @@ def _create_user(newbie=False):
                 count += 1
         finally:
             if debug and account is not None: print '==\n%s\n==' % account
-            done = _confirm('Done creating accounts?')
+            done = _confirm('Done creating all of your accounts?')
             clear_screen()
     new_user.accounts = accounts
     new_user.accounts, status = new_user._reconfigure_subaccounts()
     clear_screen()
-    if _confirm(('%s\nCreate user?' % new_user), default=True):
+    if _confirm(('%s\nCreate user %s?' % (new_user, new_user.name)), default=True):
         new_user.save()
         all_users.append(new_user)
         for account in new_user.accounts:
