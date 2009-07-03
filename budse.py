@@ -1843,7 +1843,7 @@ class Transaction(DatabaseObject):
                     self.account.save()
         else:
             for column_name, value in self.dirty.iteritems():
-                if isinstance(value, DatbaseObject):
+                if isinstance(value, DatabaseObject):
                     updates.append((column_name, value.id))
                 else:
                     updates.append((column_name, value))
@@ -2134,8 +2134,7 @@ class Budse(object):
                     begin_date = self._ask_date(prompt='Transaction date')
                     end_date = begin_date
                 elif choice == '3':
-                    unique_id = _ask_amount(type=int,
-                                            prompt='Unique ID of transaction: ')
+                    unique_id = _handle_input('Unique ID of transaction: ', int)
                     limit = 1
                 elif choice == '4':
                     done = False
@@ -2307,15 +2306,23 @@ class Budse(object):
         root_id -- The root ID that groups the entire transaction.
         
         """
-        root_transaction, transactions = \
-                          self.user.get_transactions(root_id=root_id)
-        transactions.append(root_transaction)
+        root, transactions = self.user.get_transactions(limit=50,
+                                                        root_id=root_id).pop()
+        if len(transactions) == 0:
+            transactions.append(root)
         for transaction in transactions:
-            if transaction.action == transaction_table['deposit']:
+            if ((transaction.action == transaction_table['deposit'] and
+                transaction.status) or
+                (transaction.action == transaction_table['withdrawal'] and
+                 not transaction.status)):
                 transaction.account.total -= transaction.amount
-            elif transaction.action == transaction_table['withdrawal']:
+            elif ((transaction.action == transaction_table['withdrawal'] and
+                   transaction.status) or
+                  (transaction.action == transaction_table['deposit'] and
+                   not transaction.status)):
                 transaction.account.total += transaction.amount
-            transaction.status = False
+            transaction.account.save()
+            transaction.status = not transaction.status
             transaction.save()
 
     def print_balance(self, subaccount=None, include_total=True, 
@@ -3024,9 +3031,20 @@ while 1:
         clear_screen()
         app.create_report()
     elif action == '7':
-        app.status = 'Currently unimplemented!'
-        #TODO 2 ensure reverse_transaction is correct!
-        #app.reverse_transaction(some_id)
+        root_id = _handle_input('Root ID of transaction: ', int)
+        query, parameters = select([transaction_table['id']],
+                                   transaction_table['table'],
+                                   [(transaction_table['root_id'], root_id)])
+        try:
+            row = connector(query, parameters).fetchone()
+            root_transaction = row[transaction_table['id']]
+        except TypeError:
+            root_transaction = 0
+        if root_transaction != 0:
+            app.status = 'Transaction %d reversed' % root_id
+            app.reverse_transaction(root_id)
+        else:
+            app.status = 'ID is not a root ID'
     elif action == '8':
         app.modify_user_settings()
     else:
