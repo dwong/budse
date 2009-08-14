@@ -2,22 +2,22 @@
 # BUDget for Spam and Eggs (Budse)
 #
 # Version:
-#     0.2
+#     0.3
 #
 # Description:
 #     Budget finances on the console
 #
 # Requirements:
-#     1) Python 2.5.4 - not compatible with future versions (yet)
-#     2) Sqlite3
-#     3) Courage (for the bugs)
+#     1) Python 2.6.* - might be (but not guaranteed to be) Py3k compatible
+#     2) SQL Alchemy
 #
 # License:
-#     Released under the GPL, a copy of which can be found at http://www.gnu.org/copyleft/gpl.html
+#     Released under the GPL, a copy of which can be found at 
+#     http://www.gnu.org/copyleft/gpl.html
 #
 # Author:
-#     Derek Wong (http://www.goingthewongway.com)
-#
+#     Derek Wong
+#     http://www.goingthewongway.com
 #
 ############################
 
@@ -26,7 +26,16 @@ import datetime
 import os
 #import pdb
 from optparse import OptionParser
-import sqlite3 as sqlite
+
+
+from sqlalchemy import Table, Column, Integer, String, ForeignKey, desc
+from sqlalchemy import create_engine, DateTime, Date, MetaData, Boolean, or_
+from sqlalchemy.ext.declarative import declarative_base, synonym_for
+from sqlalchemy.orm import sessionmaker, scoped_session, relation, backref
+from sqlalchemy.orm import synonym
+from sqlalchemy.orm.exc import NoResultFound, MultipleResultsFound
+from sqlalchemy.orm.properties import ColumnProperty
+from sqlalchemy.sql.expression import func
 
 default_database = 'data.db'
 parser = OptionParser()
@@ -34,1143 +43,172 @@ parser.set_defaults(debug=False, database=default_database)
 parser.add_option('-f', '--file',
                   dest='database', help='Database file to utilize')
 parser.add_option('-d', '--debug',
-                  action='store_true', dest='debug', help='Display debugging information')
+                  action='store_true', dest='debug',
+                  help='Display debugging information')
 opts, args = parser.parse_args()
 
 debug = opts.debug
 database_file = opts.database
 
-account_table = {'table': 'accounts', 'id': 'account_id', 'user': 'user_id',
-                 'name': 'account_name', 'status': 'status',
-                 'total': 'account_total', 'type': 'percentage_or_fixed',
-                 'amount': 'transaction_amount', 'gross': 'affect_gross',
-                 'description': 'account_description',
-                 'percentage_type': 'percentage', 'fixed_type': 'fixed',
-                 'gross_true': 1, 'gross_false': 0,
-                 'active': 1, 'inactive': 0
-                 }
-#TODO 10 turn off prompting for deducting from gross?
-#TODO 8 deduction table instead of within user table
-user_table = {'table': 'users', 'id': 'user_id', 'name': 'user_name',
-              'status': 'status', 'timestamp': 'last_login',
-              'deductions': 'automatic_deductions', 
-              'whole_account': 'whole_account_actions',
-#              'gross': 'prompt_for_gross',
-              'whole_account_true': 1, 'whole_account_false': 0,
-#              'gross_true': 1, 'gross_false': 0,
-              'active': 1, 'inactive': 0
-              }
-transaction_table = {'table': 'transactions', 'id': 'transaction_id',
-                     'timestamp': 'timestamp', 'date': 'date',
-                     'user':'user_id', 'account': 'account_id',
-                     'amount': 'amount', 'action': 'action',
-                     'description': 'description', 'status': 'status',
-                     'root_id': 'root_transaction_id',
-                     'deposit': '+', 'withdrawal': '-','deduction': '|',
-                     'information': '?', 'transfer': '=',
-                     'active': 1, 'inactive': 0
-                     }
+# Homegrown XML/S-expressions
+str_delimiter = ',|,'  # A string that is unlikely to be used by the user
+tag_delimiter = ',:,'
 
-class BudseException(Exception):
-    """Base class for exceptions in this module.
-    """
-    pass
+engine = create_engine('sqlite:///%s' % database_file)
+Base = declarative_base()
+Session = sessionmaker(bind=engine)
 
-class MetaException(BudseException):
-    """Exception raised for meta actions in the input.
-    """
-    def __init__(self, expression):
-        """Initialization method.
+class UpperComparator(ColumnProperty.Comparator):
+    def __eq__(self, other):
+        return func.upper(self.__clause_element__()) == func.upper(other)
 
-        Keyword arguments:
-        expression -- Input that caused the exception to be raised
-         
-        """
-        self.expression = expression
+########
+#CLASSES
+########
+class Account(Base):
+    PERCENTAGE = 'percentage'
+    FIXED = 'fixed'
+
+    __tablename__ = 'accounts'
+
+    id = Column('account_id', Integer, primary_key=True)
+    _user = Column('user_id', Integer, ForeignKey('users.user_id'))
+    _name = Column('account_name', String, nullable=False)
+    status = Column(Boolean, default=True)
+    _total = Column('account_total', Integer)
+    percentage_or_fixed = Column(String)
+    _transaction_amount = Column('transaction_amount', Integer)
+    affect_gross = Column(Boolean)
+    description = Column('account_description', String)
+
+    user = relation('User', backref=backref('accounts', order_by=id))
+    
+    def __init__(self, user, name=None, description=None,
+                 percentage_or_fixed=None, amount=0.00, gross=None):
+        self.user = user
+        self.description = description
+        self.amount = amount
+        self.account_name = name
+        self.percentage_or_fixed = percentage_or_fixed
+        self.affect_gross = gross
+        self.total = 0.00
+        
+    def _get_amount(self):
+        if self.percentage_or_fixed == Account.PERCENTAGE:
+            return float(self._transaction_amount) / 10000
+        else:
+            return float(self._transaction_amount) / 100
+    def _set_amount(self, amount):
+        self._transaction_amount = int(round(float(amount) * 100))
+    amount = synonym('_transaction_amount',
+                     descriptor=property(_get_amount, _set_amount))
+
+    def _get_name(self):
+        return self._name
+    def _set_name(self, name):
+        if name.lstrip() == '':
+            raise TypeError('Cannot use a null name')
+        self._name = name.lstrip().rstrip()
+    name = synonym('_name', descriptor=property(_get_name, _set_name))
+
+    def _get_total(self):
+        return float(self._total) / 100
+    def _set_total(self, total):
+        self._total = int(round(total * 100))
+    total = synonym('_total', descriptor=property(_get_total, _set_total))
+    
+    def __repr__(self):
+        return ('%s %s %s %s %s %s' %
+                (self.__class__.__name__, self.name, self.description,
+                 self.percentage_or_fixed, self._transaction_amount,
+                 self.affect_gross))
 
     def __str__(self):
-        return '%s' % (self.expression)
-
-class CancelException(MetaException):
-    """Exception raised to cancel out of a menu.
-    """
-    def __init__(self, expression):
-        self.expression = expression
-
-    def __str__(self):
-        return '%s' % (self.expression)
-
-class DoneException(MetaException):
-    """Exception raised when completed with input.
-    """
-    def __init__(self, expression):
-        self.expression = expression
-
-    def __str__(self):
-        return '%s' % (self.expression)
-
-class ConversionException(MetaException):
-    """Exception raised converting to the type specified.
-    """
-    def __init__(self, expression):
-        self.expression = expression
-
-    def __str__(self):
-        return '%s' % (self.expression)
-
-      
-# Actions that have meaning for all menus
-meta_actions = 'c - Cancel\nd - Done\nq - Quit Program'
-output_date = '%m/%d/%Y'
-def _handle_input(prompt, base_type=str):
-    """Take all input, passing back errors as appropriate.
-
-    This function will be the single point of entry for user
-    input into the console.  It will catch exceptions, and pass
-    them back along with the user input so that callers can
-    decide what to do.
-
-    Keyword arguments:
-    prompt -- Printed to user 
-    base_type -- Type to expect in the input
-
-    Returns:
-    Expression coming from input
-
-    """
-    try:
-        base_input = raw_input(prompt)
-    except KeyboardInterrupt:
-        raise SystemExit('Quitting the Budse')
-    if str(base_input).upper() == 'C':
-        raise CancelException('Cancel current menu')
-    elif str(base_input).upper() == 'D':
-        raise DoneException('User is done with input')
-    elif str(base_input).upper() == 'Q':
-        raise SystemExit('Quitting the Budse')
-    try:
-        expression = base_type(base_input)
-    except Exception, e:
-        raise ConversionException('Error converting %s to %s' % (base_input,
-                                                             base_type))
-    return expression
-
-def _confirm(prompt, default=False):
-    """Prompt user for a confirmation of something.
-
-    Keyword parameters:
-    prompt -- What question to ask the user
-    default -- Value that <RETURN> will be for (default False/no)
-
-    """
-    confirm = None
-    yes_list = ('y', 'yes')
-    no_list = ('n', 'no')
-    if not default:
-        no_list += ('',)
-        values = 'y/N'
-    else:
-        yes_list += ('',)
-        values = 'Y/n'  
-    prompt = prompt + ' [' + values + '] '
-    while confirm is None:
-        answer = _handle_input(prompt).lstrip().lower()
-        if answer in no_list:
-            confirm = False
-        elif answer in yes_list:
-            confirm = True
+        """Comma-delimited string representation of this object."""
+        string_repr = 'Account Name%s %s%s' % (tag_delimiter, self.name,
+                                               str_delimiter)
+        string_repr += 'Description%s %s%s' % (tag_delimiter, self.description,
+                                               str_delimiter)
+        string_repr += 'Balance%s $%0.2f%s' % (tag_delimiter, self.total,
+                                               str_delimiter)
+        if self.percentage_or_fixed == Account.PERCENTAGE:
+            string_repr += 'Type%s Percentage%s' % (tag_delimiter,
+                                                    str_delimiter)
         else:
-            print 'Not an acceptable value'
-    return confirm    
-
-def _ask_string(prompt='Description? '):
-    """Query user for a string, usually a description.
-
-    Keyword arguments:
-    prompt -- How to query the user
-
-    Returns:
-    Input received for the description
-
-    """
-    return _handle_input(prompt)
-
-def _ask_amount(prompt='Amount? ', type=float, require_input=True):
-    """Query user for a float amount
-    
-    Keyword arguments:
-    prompt -- Output to the user to indicate input that's expected
-    type -- The type of amount that is expected
-    require_input -- Require the user to input a value
-
-    Returns:
-    Numeric value
-
-    """
-    amount = None
-    while amount is None:
-        try:
-            amount = _handle_input(prompt, type)
-        except ConversionException:
-            print 'Invalid value'
-    # Only keep 2 decimal places of precision for these floats
-    return round(amount, 2)
-            
-def table(target):
-    """Construct the tables to be used in a query
-
-    Keyword arguments:
-    target -- Dictionary of tables to retrieve from.  
-        Of the form (['t1': 'first_table', 't2':'second_table',
-                      '1_key': 'first_id', '2_key': 'second_id'],
-                     ['t1': 'second_table', 't2':'third_table',
-                      '1_key': 'second_key', '2_key': 'third_key'])
-        A single table can be passed as a string (not a dictionary).
-
-    Returns:
-    table portion of query string, implicit joins needed in the WHERE clause
-
-    """
-    query = ''
-    if isinstance(target, str):
-        query += '%s ' % target
-        implicit_joins = None
-    else:
-        tables = []
-        join_count = len(target)
-        table_1 = 't1'
-        table_2 = 't2'
-        key_1 = '1_key'
-        key_2 = '2_key'
-        implicit_joins = ''
-        for join in target:
-            try:
-                tables.index(join[table_1])
-            except ValueError:
-                tables.append(join[table_1])
-            try:
-                tables.index(join[table_2])
-            except ValueError:
-                tables.append(join[table_2])
-            implicit_joins += '%s.%s=%s.%s AND ' % (join[table_1], join[key_1],
-                                                    join[table_2], join[key_2])
+            string_repr += 'Type%s Fixed%s' % (tag_delimiter, str_delimiter)
+        if self.percentage_or_fixed == Account.PERCENTAGE:
+            string_repr += 'Amount%s %0.2f%%%s' % (tag_delimiter,
+                                                   self.amount * 100,
+                                                   str_delimiter)
         else:
-            implicit_joins = implicit_joins[:implicit_joins.rindex('AND')]
-        for table in tables:
-            query += '%s ,' % table
+            string_repr += 'Amount%s $%0.2f%s' % (tag_delimiter, self.amount,
+                                                  str_delimiter)
+        if self.affect_gross:
+            string_repr += 'Affects%s Gross%s' % (tag_delimiter, str_delimiter)
         else:
-            query = query[:query.rindex(',')]
-    return query, implicit_joins
-
-def where(filters=None, implicit_joins=None):
-    """Where clause used when dealing with a database.
-
-    Keyword arguments:
-    filters -- List of ([comparison operator, ]column, value) filters to
-        use in the WHERE clause (default None)
-    implicit_joins -- String of implicit joins that are needed in order
-        to join multiple tables (default None)
-
-    Returns:
-    Where portion of SQL query, parameters (list of values for each filter)
-    
-    """
-    query = ''
-    parameters = []
-    if (filters is not None and filters) or implicit_joins is not None:
-        if implicit_joins is None:
-            implicit_joins = ''
-        elif filters:
-            implicit_joins += 'AND '
-        query += 'WHERE %s' % implicit_joins
-        if filters is not None:
-            for query_filter in tuple(filters):
-                if len(query_filter) == 3:
-                    comparison_operator, column, value = query_filter
-                else:
-                    column, value = query_filter
-                    comparison_operator = '='
-                query += '%s %s ? AND ' % (column, comparison_operator)
-                parameters.append(value)
-   # Can't handle using OR clause (would also require using parenthesis in query)
-            else:
-                query = query[:query.rindex('AND')]
-    return query, parameters
-
-def select(columns, target, filters=None, group=None, order=None, limit=None):
-    """Select an arbitrary amount of columns from a table
-
-    Keyword arguments:
-    columns -- List of columns to retrieve
-    target -- Dictionary of tables to retrieve from. A single table can be 
-        passed as a string (not a dictionary).
-        See table for further details
-    filters -- List of ([comparison operator, ]column, value) filters to
-        use in the WHERE clause (default None)
-    order -- List of how to order the results (default None)
-    group -- List of how to group the results (default None)
-    limit -- An integer that allows a specified number of rows in the 
-        result set (default None)
-    
-    Returns:
-    query string and optional parameter list if filters are sent
-    
-    """
-    query = 'SELECT '
-    for column in columns:
-        query += '%s ,' % column
-    else:
-        query = query[:query.rindex(',')]
-    from_clause, implicit_joins = table(target)
-    where_clause, parameters = where(filters, implicit_joins)
-    query += 'FROM %s' % (from_clause + where_clause)
-    if group is not None:
-        query += 'GROUP BY '
-        for clause in group:
-            query += '%s ,' % clause
+            string_repr += 'Affects%s Net%s' % (tag_delimiter, str_delimiter)
+        if self.status is None:
+            string_repr += 'Active%s Not yet' % tag_delimiter
         else:
-            query = query[:query.rindex(',')]
-    if order is not None:
-        query += 'ORDER BY ' 
-        for clause in order:
-            query += '%s ,' % clause
-        else:
-            query = query[:query.rindex(',')]
-    if limit is not None:
-        query += 'LIMIT %d' % limit
-    if parameters:
-        return query, tuple(parameters)
-    else:
-        return query
-
-def update(changes, target, filters, limit=None):
-    """Update an existing entry in the database.
-
-    Keyword arguments:
-    changes -- List of (columns, values) to modify
-    target -- Dictionary of tables to retrieve from. A single table can be 
-        passed as a string (not a dictionary).
-        See table for further details
-    filters -- List of (column, value) filters to use in the WHERE clause
-    order -- List of how to order the results (default None)
-    group -- List of how to group the results (default None)
-    limit -- An integer that allows a specified number of rows in the 
-        result set (default None)
-
-    Returns:
-    query string, tuple of parameters
-    
-    """
-    table_string, implicit_joins = table(target)
-    query = 'UPDATE ' + table_string + ' SET '
-    parameters = []
-    for column, value in changes:
-        query += '%s=? ,' % column
-        parameters.append(value)
-    else:
-        query = query[:query.rindex(',')]
-    where_string, where_values = where(filters, implicit_joins)
-    query += where_string
-    parameters += where_values
-    if limit is not None:
-        query += ' LIMIT %d ' % limit
-    return query, tuple(parameters)
-
-def delete(target, filters):
-    """Delete rows from a database.
-
-    Keyword arguments:
-    target -- Dictionary of tables to retrieve from. A single table can be 
-        passed as a string (not a dictionary).
-        See table for further details
-    filters -- List of (column, value) filters to use in the WHERE clause
-    
-    """
-    #support DELETE without filters??
-    query = 'DELETE FROM '
-    table_string, implicit_joins = table(target)
-    query += table_string
-    where_string, parameters = where(filters, implicit_joins)
-    query += where_string
-    return query, tuple(parameters)
-
-def insert(insert_values, target):
-    """Delete rows from a database.
-
-    Keyword arguments:
-    insert_values -- List of (column, value) tuples
-    target -- A single table name
-
-    Returns:
-    query string, parameter list
-    
-    """
-    if not isinstance(target, str):
-        raise ValueError('Cannot insert into multiple tables.')
-    columns = values = ''
-    parameters = []
-    for column, value in insert_values:
-        columns += '%s, ' % column
-        values += '?, '
-        parameters.append(value)
-    else:
-        columns = columns[:columns.rindex(',')]
-        values = values[:values.rindex(',')]
-    query = 'INSERT INTO %s ( %s ) VALUES ( %s )' % (target, columns, values)
-    return query, tuple(parameters)
-
-def execute_query(query, query_arguments=None):
-    """Execute an arbitrary command on the database
-    
-    Keyword arguments:
-    query -- Arbitrary SQL query 
-    query_arguments -- List of arguments to the SQL query (default None)
-
-    Returns:
-    Cursor with which to loop through the result set, if applicable
-
-    """
-    #TODO 20 check out pysqlite using connection as context manager
-    if query_arguments is None:
-        try:
-            if debug: print 'Query (no args): %s' % query
-            cursor = connection.execute(query)
-            connection.commit()
-        except sqlite.Error, e: 
-            print "Query error (parameter-less query): ", e.args[0]
-            print 'Query: %s' % query
-    else:
-        try:
-            if debug: print 'Query: %s\nArgs: %s' % (query, query_arguments)
-            cursor = connection.execute(query, query_arguments)
-            connection.commit()            
-        except sqlite.Error, e: 
-            if debug: print "Query error (with parameters): ", e.args[0]
-            if debug: print 'Query: %s\nArgs:%s' % (query, query_arguments)
-    return cursor
-connector = execute_query
-
-
-class DatabaseObject(object):
-
-    def __init__(self, table, id_column, id=None, indent=''):
-        """Initialize an object to interact with a row of a database.
-
-        Keyword arguments:
-        table -- Database table to retrieve from
-        id_column -- Name of the column storing the unique IDs
-        id -- Unique ID of the entry to reference (default None)
-        indent -- An empty string (e.g., '    ') that will indent the object
-            when it's printed out as a string (via __str__) (default '')
-
-        """
-        object.__init__(self)
-        try:
-            if id is not None:
-                query, parameters = select([id_column], 
-                                           table,
-                                           [(id_column, id)],
-                                           limit=1)
-                cursor = connector(query, parameters)
-            else:
-                query = select((id_column,), table, limit=1)
-                cursor = connector(query)
-        except sqlite.Error:
-            raise ValueError('Invalid database reference')
-        if id is not None:
-            row = cursor.fetchone()
-            if row is None or row[id_column] is None:
-                raise ValueError('Invalid database reference')
-        self.table = table
-        self.id_column = id_column
-        self.id = id
-        self.indent = indent
-        # cache and dirty dictionaries are keyed by [column name]
-        self.cache = {}
-        self.dirty = {}
-        
-    def discard(self):
-        """Discard any changes that have been made.
-
-        This is the inverse function of save.
-        
-        """
-        if debug:
-            print 'discard(): \ndirty:%s\ncache:%s' % (self.dirty, self.cache)
-        self.dirty = {}
-    
-#Concerns - This could be bad in cases where the cache becomes stale.
-
-#Perhaps put a lock per user within the database
-#itself? This can also be a problem if somehow the user escapes (or 
-#is dumped) out of the program without "properly" quitting.  This 
-#reader writer problem is of minimal concern at this point
-#since this is aimed at being a small application to be 
-#used by a single user on a local machine at a time.  Speed is of
-#much more importance for that goal.
-
-#Another idea would be to create another access table that would
-#essentially dictate the coherency protocol to keep data consistent
-#across all instances.
-
-    @staticmethod
-    def _get_function(column_name):
-        """Return closure for retrieving a column from a specified table.
-
-        Keyword arguments:
-        column_name -- The column in the database to retrieve
-
-        Returns:
-        Function closure that will retrieve a specific column for a row
-
-        """
-        def get_setting(self):
-            if column_name in self.dirty:
-                return self.dirty[column_name]
-            elif (column_name not in self.cache or
-                  self.cache[column_name] is None):
-                if self.id is not None:
-                    query, parameters = select([column_name],
-                                               self.table,
-                                               [(self.id_column, self.id)])
-                    row = connector(query, parameters).fetchone()
-                    self.cache[column_name] = row[column_name]
-                else:
-                    return None
-            return self.cache[column_name]
-        return get_setting
-
-    @staticmethod
-    def _set_function(column_name):
-        """Return closure for updating specific database column.
-
-        Keyword arguments:
-        column_name -- The column in the database to retrieve
-
-        Returns:
-        Function closure that will set a specific column for a row
-
-        """
-        def set_setting(self, new_value):
-            self.dirty[column_name] = new_value
-        return set_setting
-
-    @staticmethod
-    def _del_function(column_name):
-        """Blank the value from the database before deleting the attribute.
-
-        Keyword arguments:
-        column_name -- The column in the database to retrieve
-
-
-        """
-        def del_setting(self):
-            if column_name in self.cache:
-                del self.cache[column_name]
-            if column_name in self.dirty:
-                del self.dirty[column_name]
-            if self.id is not None:
-                query, parameters = update([(column_name, '')],
-                                           self.table,
-                                           [(self.id_column, self.id)])
-                connector(query, parameters)
-        return del_setting
-
-    @staticmethod
-    def accessors(column_name):
-        """Return a tuple of get and set accessor functions.
-
-        Keyword arguments:
-        column_name -- The column in the database to retrieve
-
-        Returns:
-        Tuple of function closures of (get_setting, set_setting,
-            del_setting)
-
-        """
-        return (DatabaseObject._get_function(column_name),
-                DatabaseObject._set_function(column_name),
-                DatabaseObject._get_function(column_name))
-
-
-class Account(DatabaseObject):
-
-    def __init__(self, account_id=None, name=None, description=None, 
-                 type=None, amount=0.00, gross=None, user=None):
-        """Initialize a new account object.
-
-        Keyword arguments:
-        account_id -- Unique ID of the account this object represents,
-            will disregard other parameters if this is present
-        name -- Name of new account
-        description -- User description of new account
-        type -- % or fixed, affects whole account actions
-        amount -- % or fixed amount for whole account actions
-        gross -- Affects gross amount
-        user -- User object to which this account belongs to
-
-        """
-        DatabaseObject.__init__(self, table=account_table['table'],
-                                id_column=account_table['id'], id=account_id)
-        if self.id is None:
-            self.name = name
-            self.description = description
-            self.type = type
-            self.amount = amount
-            self.gross = gross
-            self.total = 0.00
-            self.status = False
-            self.user = user
-
-    (get_total, set_total, del_total) = \
-                DatabaseObject.accessors(account_table['total'])
-    total = property(get_total, set_total, del_total, 'Current balance')
-
-    (get_user, set_user, del_user) = \
-               DatabaseObject.accessors(account_table['user'])
-    user = property(get_user, set_user, del_user, 'Owner of account')
-
-    (get_name, set_name, del_name) = \
-               DatabaseObject.accessors(account_table['name'])
-    name = property(get_name, set_name, del_name, 'Account name')
-
-    def modify_name(self):
-        """Change the name for a particular subaccount.
-
-        Returns:
-        status of login name modification
-
-        """
-        status = 'Kept existing login name'
-        if self.name is not None:
-            print '\nExisting name: %s' % self.name
-            temporary_name = _handle_input('New name: ')
-            if temporary_name.lstrip() != '':
-                if _confirm(prompt='Change name from %s to %s?' % (self.name,
-                                             temporary_name), default=True):
-                    self.name = temporary_name
-                    status = 'Name changed'
-        else:
-            self.name = _ask_string('Name for the account: ')
-            status = 'Created new login name'
-        return status
-
-    (get_desc, set_desc, del_desc) = \
-        DatabaseObject.accessors(account_table['description'])
-    description = property(get_desc, set_desc, del_desc, 'Account description')
-
-    def modify_description(self):
-        """Get a new description for a particular subaccount.
-
-        Returns:
-        status of description change
-
-        """
-        status = 'Kept existing description'
-        try:
-            if self.description is not None:
-                print 'Existing description: %s' % self.description
-                temporary_description = _ask_string('New description? ')
-                prompt = ('Change description from %s to %s?' % 
-                          (self.description, temporary_description))
-                if _confirm(prompt=prompt, default=True):
-                    self.description = temporary_description
-                    status = 'Description changed'
-            else:
-                self.description = _ask_string()
-                status = 'Now have an account description'
-        except (CancelException, DoneException):
-            pass
-        return status
-
-    (_get_stat, _set_stat, del_status) = \
-                DatabaseObject.accessors(account_table['status'])
-
-    def get_status(self):
-        """Convert database value for status into readable string.
-
-        Returns:
-        True if active, False otherwise
-
-        """
-        if self._get_stat() == account_table['active']:
-            return True
-        else:
-            return False
-
-    def set_status(self, status):
-        """Convert boolean status assignment into a specified database value.
-
-        Keyword arguments:
-        status -- Boolean value for active state
-
-        """
-        if bool(status):
-            new_status = account_table['active']
-        else:
-            new_status = account_table['inactive']
-        self._set_stat(new_status)
-
-    status = property(get_status, set_status, del_status, 'Active state')
-
-    def modify_status(self):
-        """Prompt to flip the status of an existing subaccount
-
-        Returns:
-        status string of change
-
-        """
-        status = 'Kept existing account status'
-        if self.status:
-            if _confirm(prompt='Deactivate account?', default=False):
-                self.status = False
-                status = 'Deactivated account'
-        else:
-            if _confirm(prompt='Activate account?', default=True):
-                self.status = True
-                status = 'Activated account'
-        return status
-
-    (get_type, set_type, del_type) = \
-               DatabaseObject.accessors(account_table['type'])
-
-    type = property(get_type, set_type, del_type, '% or fixed')
-
-    def modify_type(self):
-        """Change the type of the account, used for whole account actions.
-
-        Returns:
-        status of modification
-
-        """
-        if self.type is not None:
-            status = 'Kept existing type'
-            if self.type == account_table['percentage_type']:
-                if _confirm(prompt='Change to fixed amount?', 
-                                 default=True):
-                    self.type = account_table['fixed_type']
-                    status = 'Changed type to fixed amount'
-            else:
-                if _confirm(prompt='Change to percentage amount?', 
-                                 default=True):
-                    self.type = account_table['percentage_type']
-                    status = 'Changed type to percentage amount'
-        else:
-            new_type_status = ''
-            while self.type is None:
-                prompt = ('Type:\n1 - Percentage\n'
-                          '2 - Fixed\n%s\n%s\nChoice: ' %
-                          (meta_actions, new_type_status))
-                new_type_status = ''
-                choice = _handle_input(prompt)
-                if choice == '1':
-                    self.type = account_table['percentage_type']
-                    status = 'Type is now percentage'
-                elif choice == '2':
-                    self.type = account_table['fixed_type']
-                    status = 'Type is now fixed'
-                else:
-                    new_type_status = 'Invalid choice'
-        return status
-
-    (_get_amt, _set_amt, del_amount) = \
-               DatabaseObject.accessors(account_table['amount'])
-
-    def get_amount(self):
-        """Return amount specified for whole account transactions
-
-        Returns:
-        Fraction (zero to 1) for percentage types, value specified otherwise
-
-        """
-        temporary_amount = self._get_amt()
-        if self.type == account_table['percentage_type']:
-            temporary_amount = float(temporary_amount) / 100
-        return round(temporary_amount, 4)
-
-    def set_amount(self, amount):
-        """Pretend like whole numbers can be percentages.
-
-        Keyword arguments:
-        amount -- The amount to assign to the account.
-        
-        """
-        self._set_amt(round(amount, 2))
-        
-    amount = property(get_amount, set_amount, del_amount, '% or fixed value')
-
-    def modify_amount(self, loop=False, type_change=False):
-        """Change the amount for this account, whether percentage or fixed.
-
-        Keyword arguments:
-        loop -- Continue to loop until the user modifies the amount 
-            (default False)
-        type_change -- Whether have to change the amount because the account
-            type changed (default False)
-
-        Returns:
-        status of amount modification
-
-        """
-        prompt = ''
-        status = 'Kept existing amount'
-        if self.amount is not None:
-            if not type_change:
-                # Overwrite parameter if subaccount object is passed
-                if self.type == account_table['percentage_type']:
-                    display_amount = '%s%%' % (self.amount * 100)
-                else:
-                    display_amount = '$%s' % self.amount
-                prompt += 'Existing Amount: %s\n' % display_amount
-                if self.gross:
-                    modifies = 'Gross'
-                else:
-                    modifies = 'Net'
-                prompt += 'Modifies: %s\n' % modifies
-            else:
-                prompt += 'Type changed, modify amount\n'
-        else:
-            prompt = 'No existing amount\n'
-        if self.type == account_table['percentage_type']:
-            prompt += 'Percentage for whole account actions: '
-        else:
-            prompt += 'Fixed amount (dollars) for whole account actions: '
-        while 1:
-            temporary_amount = _ask_amount(prompt)
-            if (self.type == account_table['percentage_type'] and
-                not 0 <= temporary_amount <= 100):
-                print 'Out of range! (Must be in the range 0-100)'
-                continue
-            if self.type == account_table['percentage_type']:
-                display_amount = '%0.2f%%' % temporary_amount
-            else:
-                display_amount = '$%0.2f' % temporary_amount
-            confirm_prompt = 'Use %s for the amount? ' % display_amount
-            if _confirm(prompt=confirm_prompt, default=True):
-                self.amount = temporary_amount
-                status = 'Amount changed'
-                break
-            elif not loop:
-                break
-        return status
-
-    (_get_gross, _set_gross, del_gross) = \
-                 DatabaseObject.accessors(account_table['gross'])
-
-    def get_gross(self):
-        """Convert database values for affecting the gross (vs net).
-
-        Returns:
-        True if affect gross, False if affect net
-
-        """
-        gross = self._get_gross()
-        if gross is not None:
-            if gross == account_table['gross_true']:
-                return True
-            else:
-                return False
-        else:
-            return None
-
-    def set_gross(self, gross):
-        """Convert a boolean to one of the allowed values for the gross volume.
-
-        Keyword arguments:
-        gross -- Whether whole account actions will use this account on the
-            gross amount or the net
-
-        """
-        if gross is not None:
-            if bool(gross):
-                affect_gross = account_table['gross_true']
-            else:
-                affect_gross = account_table['gross_false']
-        else:
-            affect_gross = None
-        self._set_gross(affect_gross)
-
-    gross = property(get_gross, set_gross, del_gross, 'Affect gross income')
-
-    def modify_gross(self):
-        """Modify whether this account affects the gross amount (vs net)
-
-        Returns:
-        status of modification to gross vs net
-
-        """
-        status = 'Kept existing setting for affecting the gross amount'
-        if debug: print 'gross value: %s' % self.gross
-        if self.gross is not None:
-            if not self.gross:
-                if _confirm(prompt='Affect the gross amount (on whole account'
-                            ' actions)?', default=True):
-                    self.gross = True
-                    status = 'Now affecting the gross amount'
-            else:
-                if _confirm(prompt='Affect the net amount (on whole account '
-                            'actions)?', default=True):
-                    self.gross = False
-                    status = 'Now affecting the net amount'
-        else:
-            new_gross_status = ''
-            while self.gross is None:
-                prompt = ('For whole account actions, affect:\n1 - Gross\n'
-                          '2 - Net\n%s\n%s\n\nChoice: ' % (meta_actions, 
-                                                           new_gross_status))
-                new_gross_status = ''
-                choice = _handle_input(prompt)
-                if choice == '1':
-                    self.gross = True
-                    status = 'Now affecting the gross amount'
-                elif choice == '2':
-                    self.gross = False
-                    status = 'Now affecting the net amount'
-                else:
-                    new_gross_status = 'Invalid choice'
-        return status
-        
-    def save(self):
-        """Store the details of the account in the database.
-        """
-        if self.id is None:
-            self.status = True
-            insertions = []
-            for column_name, value in self.dirty.iteritems():
-                if isinstance(value, DatabaseObject):
-                    insertions.append((column_name, value.id))
-                else:
-                    insertions.append((column_name, value))
-            query, arguments = insert(insertions, account_table['table'])
-            connector(query, arguments)
-            self.dirty = {}
-            query = 'SELECT last_insert_rowid()'
-            self.id = int(connector(query).fetchone()[0])
-        else:
-            updates = []
-            for column_name, value in self.dirty.iteritems():
-                if isinstance(value, DatabaseObject):
-                    update.append((column_name, value.id))
-                else:
-                    updates.append((column_name, value))
-                # optimization over just clearing cache
-                self.cache[column_name] = value 
-            if updates:
-                query, arguments = update(updates,
-                                          account_table['table'],
-                                          [(account_table['id'], self.id)])
-                connector(query, arguments)
-                self.dirty = {}
-
-    def __str__(self):
-        string_repr = '%sAccount: %s\n' % (self.indent, self.name)
-        string_repr += '%sDescription: %s\n' % (self.indent, self.description)
-        string_repr += '%sBalance: $%0.2f\n' % (self.indent, self.total)
-        string_repr += '%sType: %s\n' % (self.indent, self.type)
-        if self.type == account_table['percentage_type']:
-            display_amount = self.amount * 100
-            string_repr += '%sAmount: %s%%\n' % (self.indent, display_amount)
-        else:
-            string_repr += '%sAmount: $%0.2f\n' % (self.indent, self.amount)
-        string_repr += '%sAffect Gross: %s\n' % (self.indent, self.gross)
-        if self.status:
-            status = 'Active'
-        else:
-            status = 'Inactive'
-        string_repr += '%sStatus: %s\n' % (self.indent, status)
+            string_repr += 'Active%s %s' % (tag_delimiter, self.status)
         return string_repr
 
 
-class User(DatabaseObject):
+class User(Base):
+    __tablename__ = 'users'
 
-    def __init__(self, user_id=None, name=None, whole=False, deductions=None,
-                 accounts=None):
-        """Initialize a user object from a unique ID.
+    id = Column('user_id', Integer, primary_key=True)
+    _name = Column('user_name', String, nullable=False)
+    status = Column(Boolean, default=True)
+    _last_login = Column('last_login', DateTime)
+    _deductions = Column('automatic_deductions', String)
+    whole_account_actions = Column(Boolean)
+
+    def _get_name(self):
+        return self._name
+    def _set_name(self, name):
+        if name.lstrip() == '':
+            raise TypeError('Cannot use a null name')
+        self._name = name.lstrip().rstrip()
+    name = synonym('_name', descriptor=property(_get_name, _set_name),
+                   comparator_factory=UpperComparator)
+
+    def __init__(self, name, whole=False, deductions=None, accounts=None):
+        """Initialize a new user.
 
         Keyword arguments:
-        user_id -- Unique ID of user in database (default None if new user)
-        name -- Login name (default None)
+        name -- Login name
         whole -- Prompt for whole account actions (default False)
         deductions -- List of deductions to use (default None)
         accounts -- List of Account objects (default None)
 
         """
-        DatabaseObject.__init__(self, table=user_table['table'],
-                                id_column=user_table['id'], id=user_id)
-        if user_id is None:
-            self.name = name
-            self.whole_account_actions = whole
-            self.deductions = deductions
-            self.accounts = accounts
-            self.timestamp = None
+        self.name = name
+        self.whole_account_actions = whole
+        self.deductions = deductions
+        self.accounts = []
+        if accounts is not None:
+            for account in accounts:
+                self.accounts.append(account)
+    
+    def login(self):
+        """Record the valid login of the user."""
+        self._last_login = datetime.datetime.now()
 
-    (get_name, set_name, del_name) = \
-               DatabaseObject.accessors(user_table['name'])
-    name = property(get_name, set_name, del_name, 'Name of the user')
-
-    def modify_name(self):
-        """Change the name that is used to login to the account.
-
-        Returns:
-        status message of change
-
-        """
-        print 'Current login name: %s' % self.name
-        status = 'Keeping existing login name'
+    @synonym_for('_last_login')
+    @property
+    def last_login(self):
+        last = self._last_login
         try:
-            new_name = _handle_input('New login name: ')
-            if _confirm(prompt='Change login name to %s?' % new_name,
-                        default=True):
-                self.name = new_name
-                status = 'Changed login name to %s' % new_name
-        except (CancelException, DoneException):
-            pass
-        return status
-
-    (_get_whole, _set_whole, del_whole) = \
-                 DatabaseObject.accessors(user_table['whole_account'])
-
-    def get_whole(self):
-        """Return setting for prompting user to perform whole account actions.
-
-        Returns:
-        True if prompt for whole account actions, False otherwise
-
-        """
-        if self._get_whole() == user_table['whole_account_true']:
-            return True
-        else:
-            return False
-
-    def set_whole(self, status):
-        """Assign database values for user setting for whole account actions.
-
-        Keyword arguments:
-        status -- Boolean value to perform whole account actions
-
-        """
-        if bool(status):
-            new_status = user_table['whole_account_true']
-        else:
-            new_status = user_table['whole_account_false']
-        self._set_whole(new_status)
-
-    whole_account_actions = property(get_whole, set_whole, del_whole,
-                                     'Perform whole account actions')
-
-    def modify_whole(self):
-        """Change whether user is prompted for whole account actions.
-
-        Returns:
-        status of modification
+            return ('%s-%02d-%02d %d:%02d:%02d' %
+                    (last.year, last.month, last.day, last.hour, last.minute,
+                     last.second))
+        except AttributeError:
+            return 'Never'
         
-        """
-        status = 'Keeping user\'s existing setting for whole account actions'
-        if self.whole_account_actions:
-            if _confirm(prompt='Deactivate whole account actions?',
-                        default=False):
-                self.whole_account_actions = False
-                status = 'Deactivated whole account actions'
-        elif _confirm(prompt='Activate whole account actions?', default=True):
-            self.whole_account_actions = True
-            status = 'Activated whole account actions'
-        return status
-    
-#TODO figure out if disabling prompting for modifying the gross amount is desirable
-
-#     (_get_gross, _set_gross, del_gross) = \
-#                  DatabaseObject.accessors(user_table['gross'])
-
-#     def get_gross(self):
-#         """Return setting for prompting user to modify the gross amount.
-
-#         Returns:
-#         True if prompt to modify gross, False otherwise
-
-#         """
-#         if self._get_gross() == user_table['gross_true']:
-#             return True
-#         else:
-#             return False
-
-#     def set_gross(self, gross):
-#         """Assign database values for user setting for modifying gross.
-
-#         Keyword arguments:
-#         status -- Boolean value for whether to prompt to modify gross
-
-#         """
-#         if bool(gross):
-#             new_gross = user_table['gross_true']
-#         else:
-#             new_gross = user_table['gross_false']
-#         self._set_gross(new_gross)
-
-#     prompt_for_gross = property(get_gross, set_gross, del_gross,
-#                                 'Prompt to affect gross amount')
-
-    (_get_stat, _set_stat, del_status) = \
-                DatabaseObject.accessors(user_table['status'])
-
-    def get_status(self):
-        """Convert the database status into a string.
-        
-        Returns:
-        True if user is active, False otherwise
-
-        """
-        if self._get_stat() == user_table['active']:
-            return True
-        else:
-            return False
-
-    def set_status(self, status):
-        """Assign new status to the user account.
-        
-        Keyword arguments:
-        status -- Boolean for active state of user
-
-        """
-        if bool(status):
-            new_status = user_table['active']
-        else:
-            new_status = user_table['inactive']
-        self._set_stat(new_status)
-
-    status = property(get_status, set_status, del_status, 'Active status')
-    
-    def modify_status(self):
-        """Prompt to flip the status of the user.
-
-        Returns:
-        status message of change
-
-        """
-        changed = False
-        if self.status:
-            if _confirm(prompt='Deactivate user?', default=False):
-                self.status = False
-                status = 'Deactivated user'
-                changed = True
-        else:
-            if _confirm(prompt='Activate user?', default=True):
-                self.status = True
-                status = 'Activated user'
-                changed = True
-        if not changed:
-            status = 'Keeping user\'s existing status'
-        return status
-
-    (get_time, set_time, del_time) = \
-               DatabaseObject.accessors(user_table['timestamp'])
-    timestamp = property(get_time, set_time, del_time, 'Previous login time')
-
-    # Class properties for parsing/converting deduction string in database
-    deduction_delimiter = ';'
-    deduction_separater = ':'
-    (_get_ded, _set_ded, del_ded) = \
-               DatabaseObject.accessors(user_table['deductions'])
-    def get_ded(self):
+    _deduction_delimiter = ';'
+    _deduction_separater = ':'
+    def _get_deductions(self):
         """Parse deductions in database and convert to a list of tuples.
 
         Deductions in database should be stored as a continuous list of:
@@ -1186,159 +224,739 @@ class User(DatabaseObject):
         List of (amount, description) tuples
 
         """
-        all_deductions = self._get_ded()
+        all_deductions = self._deductions
         deductions = []
-        while all_deductions.find(self.deduction_delimiter) > 0:
-            separater_index = all_deductions.find(self.deduction_separater)
-            delimiter_index = all_deductions.find(self.deduction_delimiter)
+        while all_deductions.find(self._deduction_delimiter) > 0:
+            separater_index = all_deductions.find(self._deduction_separater)    
+            delimiter_index = all_deductions.find(self._deduction_delimiter)
             amount = float(all_deductions[:separater_index])
             description = all_deductions[separater_index+1:delimiter_index]
             deductions.append((amount, description))
             all_deductions = all_deductions[delimiter_index+1:]
         return deductions
-
-    def set_ded(self, new_deductions):
+    def _set_deductions(self, deductions):
         """Convert list of deductions into the proper format.
 
         Keyword arguments:
-        new_deductions -- List of (amount, description) tuples
+        deductions -- List of (amount, description) tuples
 
         """
-        deductions = ''
-        if new_deductions is not None:
-            for amount, description in new_deductions:
-                deductions += '%0.2f%s%s%s' % (amount,
-                                       self.deduction_separater,
-                                       description, self.deduction_delimiter)
-        self._set_ded(deductions)
+        deduction_repr = ''
+        if deductions is not None:
+            for amount, description in deductions:
+                deduction_repr += '%0.2f%s%s%s' % (amount,
+                                                   self._deduction_separater,
+                                                   description,
+                                                   self._deduction_delimiter)
+        self._deductions = deduction_repr
+    deductions = synonym('_deductions', descriptor=property(_get_deductions,
+                                                            _set_deductions))
 
-    deductions = property(get_ded, set_ded, del_ded, 'Saved deductions')
+    def __repr__(self):
+        return ('%s %s %s %s' % (self.__class__.__name__, self.name,
+                                 self.whole_account_actions, self.deductions,
+                                 self.accounts))
 
-    def reconfigure_deductions(self, deductions):
-        """Reconfigure a list of deductions.
+    def __str__(self):
+        """Comma-delimited string representation of this object."""
+        account_repr = ''
+        for account in self.accounts:
+            account_repr += '(%s),' % account
+        else:
+            account_repr = 'Accounts%s [%s]%s' % (tag_delimiter,
+                                                  account_repr[:-1],#comma chop
+                                                  str_delimiter)
+        return('User%s %s%sWhole Account Actions%s %s%sLast Login%s %s%s'
+               '%sActive%s %s' %
+               (tag_delimiter, self.name, str_delimiter, tag_delimiter,
+                self.whole_account_actions, str_delimiter, tag_delimiter,
+                self.last_login, str_delimiter, account_repr, tag_delimiter,
+                self.status))
+
+
+class Transaction(Base):
+    DEPOSIT = '+'
+    WITHDRAWAL = '-'
+    DEDUCTION = '|'
+    INFORMATIONAL = '?'
+    TRANSFER = '='
+
+    __tablename__ = 'transactions'
+
+    id = Column('transaction_id', Integer, primary_key=True)
+    _timestamp = Column('timestamp', DateTime, default=datetime.datetime.now())
+    date = Column(Date)
+    _user = Column('user_id', Integer, ForeignKey('users.user_id'))
+    _account = Column('account_id', Integer, ForeignKey('accounts.account_id'))
+    _amount = Column('amount', Integer)
+    description = Column(String)
+    action = Column(String)
+    _parent = Column('root_transaction_id', Integer,
+                     ForeignKey('transactions.transaction_id'))
+    _status = Column('status', Boolean, default=True)
+    __mapper_args__ = {'polymorphic_on':action,
+                       'polymorphic_identity':INFORMATIONAL}
+
+    user = relation('User', backref=backref('transactions', order_by=id))
+    account = relation('Account', backref=backref('transactions', order_by=id))
+    children = relation('Transaction', primaryjoin=_parent == id, cascade='all',
+                        backref=backref('parent', remote_side=id))
+
+    def __init__(self, date, user, description=None, amount=0.00, account=None,
+                 parent=None):
+        self.date = date
+        self.user = user
+        self.account = account
+        self.amount = amount
+        self.description = description
+        self.parent = parent
+
+    def _set_amount(self, amount):
+        self._amount = int(round(float(amount) * 100))
+    def _get_amount(self):
+        return float(self._amount) / 100
+    amount = synonym('_amount', descriptor=property(_get_amount, _set_amount))
+
+    @synonym_for('_timestamp')
+    @property
+    def timestamp(self):
+        ts = self._timestamp
+        return('%s-%02d-%02d %02d:%02d:%02d' % (ts.year, ts.month, ts.day,
+                                                ts.hour, ts.minute, ts.second))
+
+    def _get_status(self):
+        # TODO: don't display True for an unsaved transaction
+        if self._status is None:
+            return 'Unsaved'
+        else:
+            return self._status
+    def _set_status(self, status):
+        if status != self._status:
+            if self.account is not None:
+                reversible_transactions = [self]
+                single_transaction = True
+                account = self.account
+                amount = self.amount
+            else:
+                reversible_transactions = self.children
+                single_transaction = False
+            for transaction in reversible_transactions:
+                if not single_transaction:
+                    account = transaction.account
+                    amount = transaction.amount
+                if account is not None:
+                    if (self.action == Transaction.DEPOSIT and status) or \
+                      (self.action == Transaction.WITHDRAWAL and not status):
+                        account.total += amount
+                    elif(self.action == Transaction.WITHDRAWAL and status) or \
+                      (self.action == Transaction.DEPOSIT and not status):
+                        account.total -= amount
+                self._status = status
+    status = synonym('_status', descriptor=property(_get_status, _set_status))
+
+    def __str__(self):
+        """General human-readable transaction string."""
+        if self.action == Transaction.DEPOSIT:
+            action_type = 'Deposit'
+        elif self.action == Transaction.WITHDRAWAL:
+            action_type = 'Withdrawal'
+        elif self.action == Transaction.DEDUCTION:
+            action_type = 'Deduction'
+        elif self.action == Transaction.TRANSFER:
+            action_type = 'Transfer'
+        else:
+            action_type = 'Informational'
+
+        if self.account is not None:
+            account = self.account.name
+        else:
+            account = 'Whole account'
+
+        deduction_repr = subdeposit_repr = ''
+        if self.parent is None:
+            deduction_repr = subdeposit_repr = subwithdrawal_repr = ''
+            for deduction in session.query(Deduction).\
+                    filter(Deduction.parent == self).all():
+                deduction_repr += ('(Amount%s %s, Description%s %s)' %
+                                   (tag_delimiter, deduction.amount,
+                                    tag_delimiter, deduction.description))
+            else:
+                deduction_repr = 'Deductions%s [%s]%s' % (tag_delimiter,
+                                                          deduction_repr,
+                                                          str_delimiter)
+            for deposit in session.query(Deposit).\
+                    filter(Transaction.parent == self).all():
+                subdeposit_repr += ('(Account%s %s, Amount%s %s,'
+                                    'Description%s %s)' %
+                                    (tag_delimiter, deposit.account.name,
+                                     tag_delimiter, deposit.amount,
+                                     tag_delimiter, deposit.description))
+            else:
+                subdeposit_repr = 'Deposits%s [%s]%s' % (tag_delimiter,
+                                                         subdeposit_repr,
+                                                         str_delimiter)
+        return('Type%s %s%sAmount%s $%0.2f%sTransaction Date%s %s%sAccount%s '
+               '%s%sDescription%s %s%s%s%sActive%s %s' %
+               (tag_delimiter, action_type, str_delimiter, self.amount,
+                str_delimiter, tag_delimiter,
+                self.date.strftime(output_date, str_delimiter), tag_delimiter,
+                account, str_delimiter, tag_delimiter, self.description,
+                str_delimiter, deduction_repr, subdeposit_repr, tag_delimiter,
+                self.status))
+
+
+
+
+class Transfer(Transaction):
+    __mapper_args__ = {'polymorphic_identity':Transaction.TRANSFER}
+
+    def __init__(self, user, amount, date, to_account, from_account,
+                 description):
+        Transaction.__init__(self, user=user, date=date, 
+                             description=description, amount=amount)
+        self.description = '[%s -> %s] %s' % (from_account.name,
+                                              to_account.name,
+                                              self.description)
+        self.to_account = to_account
+        self.from_account = from_account
+        session.add(Withdrawal(user=user, amount=amount, date=date,
+                               parent=self, description=description,
+                               account=from_account))
+        session.add(Deposit(user=user, amount=amount, date=date, parent=self,
+                            description=description, account=to_account))
+
+    def __str__(self):
+        from_account = session.query(Withdrawal).\
+                            filter(Withdrawal.parent == self).one().account
+        to_account = session.query(Deposit).\
+                          filter(Deposit.parent == self).one().account
+        return('Type%s Transfer%sAmount%s $%0.2f%sTransaction Date%s %s%sAccou'
+               'nt From%s %s%sAccount To%s %s%sDescription%s %s%sActive%s %s' %
+               (tag_delimiter, str_delimiter, tag_delimiter, self.amount,
+                str_delimiter, tag_delimiter,  self.date.strftime(output_date),
+                str_delimiter,tag_delimiter, from_account.name, str_delimiter,
+                tag_delimiter, to_account.name, str_delimiter, tag_delimiter,
+                self.description, str_delimiter, tag_delimiter, self.status))
+        
+class Deduction(Transaction):
+    __mapper_args__ = {'polymorphic_identity':Transaction.DEDUCTION}
+
+    def __init__(self, user, amount, date, parent=None, description=None):
+        Transaction.__init__(self, user=user, amount=amount, date=date,
+                             parent=parent, description=description)
+
+    def __str__(self):
+        return('Type%s Deduction%sAmount%s $%0.2f%sTransaction Date%s %s%s'
+               'Description%s %s%sActive%s %s' %
+               (tag_delimiter, str_delimiter, tag_delimiter, self.amount,
+                str_delimiter, tag_delimiter, self.date.strftime(output_date),
+                str_delimiter, tag_delimiter, self.description, str_delimiter,
+                tag_delimiter, self.status))
+        
+class Deposit(Transaction):
+    __mapper_args__ = {'polymorphic_identity':Transaction.DEPOSIT}
+
+    def __init__(self, user, amount, date, description=None,
+                 account=None, deductions=None, parent=None):
+        """An object representation of a deposit transaction.
 
         Keyword arguments:
-        deductions -- List of (amount, description) tuples
-        
-        Returns:
-        deductions -- List of (amount, description) tuples
-        
-        """
-        save_results = True
-        status = ''
-        deduction_choices = {}
-        for counter, (amount, description) in zip(range(1, len(deductions)+1),
-                                                  deductions):
-            deduction_choices[counter] = (amount, description)
-        while 1:
-            clear_screen()
-            prompt = 'Deductions (changes not saved until done):\n\n'
-            for key, (amount, description) in deduction_choices.items():
-                prompt += '%d - $%0.2f (%s)\n' % (key, amount, description)
-            prompt += ('n - New Deduction\n%s\n%s\n\nModify: '
-                       % (meta_actions, status))
-            status = ''
-            try:
-                choice = _handle_input(prompt)
-            except DoneException:
-                break
-            except CancelException:
-                save_results = False
-                break
-            try:
-                if choice.upper() == 'N':
-                    amount = _ask_amount()
-                    description = _ask_string()
-                    if _confirm('Add deduction: $%0.2f (%s)?' %
-                                (amount, description), True):
-                        for key in range(1, len(deduction_choices)+2):
-                            if not key in deduction_choices:
-                                deduction_choices[key] = (amount, description)
-                        status = 'Deduction added'
-                elif int(choice) in deduction_choices:
-                    key = int(choice)
-                    amount, description = deduction_choices[int(choice)]
-                    inner_prompt = ('1 - Change Amount ($%0.2f)\n'
-                                    '2 - Change Description (%s)\n'
-                                    '3 - Delete\n\nChoice: ' % 
-                                    (amount, description))
-                    try:
-                        option = _handle_input(inner_prompt)
-                    except DoneException:
-                        continue
-                    status = 'Deduction unchanged'
-                    if option == '1':
-                        new_amount = _ask_amount()
-                        if _confirm('Change amount from $%0.2f to $%0.2f?' %
-                                    (amount, new_amount), True):
-                            deduction_choices[key] = (new_amount, description)
-                            status = 'Deduction amount changed'
-                    elif option == '2':
-                        new_description = _ask_string()
-                        if _confirm('Change description from "%s" to "%s"?' %
-                                    (description, new_description), True):
-                            deduction_choices[key] = (amount, new_description)
-                            status = 'Deduction description changed'
-                    elif option == '3' and _confirm('Are you sure that you '
-                                'want to delete this deduction:\n%s - %s\n' %
-                                (amount, description)):
-                        del deduction_choices[key]
-                        status = 'Deduction deleted'
-                else:
-                    status = 'Invalid Choice'
-            except CancelException:
-                status = 'Canceled action'
-                continue
-        if save_results:
-            deductions = []
-            for k, v in deduction_choices.iteritems():
-                deductions.append(v)
-        return deductions
-        
-    def modify_deductions(self):
-        """Modify the user's saved deductions by prompting
-        for a new list.
+        user -- User
+        amount -- Amount of transaction
+        date -- Transaction date
+        description -- User description of transaction (default None)
+        account -- Account (default None is a whole account deposit)
+        deductions -- List of Deduction objects (default None)
+        parent -- Transaction object that this Deposit is a child of
+            (default None)
 
-        Returns:
-        Status of deduction modification
+        For a 'whole account' deposit, will perform calculation and
+        instantiation of subdeposits that each represent the parts of
+        the whole deposit.
+
+        When broken down, this results in a loop each for:
+        1) Percentage amounts on the gross
+        2) Fixed amounts
+        3) Percentage amounts on the net
 
         """
-        status = ''
-        existing_deductions = self.deductions
-        deductions_status = 'Deductions unchanged'
-        while 1:
-            clear_screen()
-            prompt = ('Deductions Menu:\n\n1 - Create New List\n'
-                      '2 - Modify Existing\n%s\n%s\n\nAction: ' %
-                      (meta_actions, status))
-            status = ''
-            try:
-                action = _handle_input(prompt)
-                if action == '1' or len(self.deductions) == 0:
-                    self.deductions = self.ask_deduction_list(prompt=('Please '
-                                     'provide a list of default deductions'))
-                elif action == '2':
-                    self.deductions = self.reconfigure_deductions(self.deductions)
+        Transaction.__init__(self, user=user, amount=amount, account=account,
+                             description=description, date=date, parent=parent)
+        deduction_total = 0.00
+        self.deductions = deductions
+        if self.deductions is not None:
+            for deduction in self.deductions:
+                deduction_total += deduction.amount
+                deduction.parent = self
+        self.deposits = []
+        if self.account is None:
+            gross = running_total = self.amount
+            # Process gross percentage accounts
+            for account in filter_accounts(self.user.accounts, fixed=False,
+                                           gross=True):
+                amount = gross * account.amount
+                running_total -= amount
+                deposit = Deposit(user=self.user, amount=amount, parent=self,
+                                  date=self.date, account=account, 
+                                  description=self.description)
+                session.add(deposit)
+                self.deposits.append(deposit)
+            # Execute deductions
+            running_total -= deduction_total
+            # Process all fixed for
+            for account in filter_accounts(self.user.accounts,
+                                           percentage=False):
+                if running_total > 0:
+                    running_total -= account.amount
+                    deposit = Deposit(user=self.user, amount=account.amount,
+                                      date=self.date, account=account, 
+                                      description=self.description,
+                                      parent=self)
+                    session.add(deposit)
+                    self.deposits.append(deposit)
                 else:
-                    status = 'Invalid choice'
-            except (CancelException, DoneException):
-                break
-            if existing_deductions != self.deductions:
-                deductions_status = 'Deductions changed'
-                break
+                    raise FundsException('Insufficient funds for whole account'
+                                         ' deposit')
+            # Process remaining with the net percentage accounts
+            if running_total > 0:
+                net = running_total
+                for account in filter_accounts(self.user.accounts, fixed=False,
+                                               gross=False):
+                    amount = net * account.amount
+                    running_total -= amount
+                    deposit = Deposit(user=self.user, amount=amount,
+                                      date=self.date, account=account,
+                                      description=self.description,
+                                      parent=self)
+                    session.add(deposit)
+                    self.deposits.append(deposit)
             else:
-                status = 'Deductions unchanged'
-        return deductions_status
-            
-    def ask_deduction_list(self, prompt=('Please provide a list of deductions '
-                                         'that you would like to make')):
-        """Prompt the user for their list of deductions
+                raise FundsException('Insufficient funds for deposit')
+            final = int(float(running_total) * 100)
+            assert final == 0, 'Balance of %0.2f remains' % (final / 100)
+        else:
+            self.account.total += self.amount
 
+    def __str__(self):
+        if self.account is not None:
+            account = self.account.name
+        else:
+            account = 'Whole Account'
+        return('Type%s Deposit%sAmount%s $%0.2f%sTransaction Date%s %s%s'
+               'Account%s %s%sDescription%s %s%sActive%s %s' %
+               (tag_delimiter, str_delimiter, tag_delimiter, self.amount,
+                str_delimiter, tag_delimiter, self.date.strftime(output_date),
+                str_delimiter, tag_delimiter, account, str_delimiter,
+                tag_delimiter, self.description, str_delimiter, tag_delimiter,
+                self.status))
+            
+class Withdrawal(Transaction):
+    __mapper_args__ = {'polymorphic_identity':Transaction.WITHDRAWAL}
+
+    def __init__(self, user, amount, date, description=None,
+                 account=None, parent=None):
+        """An object representation of a withdrawal transaction.
+
+        Keyword arguments:
+        user -- User
+        amount -- Amount of transaction
+        date -- Transaction date
+        description -- User description of transaction (default None)
+        account -- Account (default None is a whole account deposit)
+        deductions -- List of Deduction objects (default None)
+        parent -- Transaction object that this Deposit is a child of
+            (default None)
+
+        """
+        Transaction.__init__(self, user=user, amount=amount, account=account,
+                             description=description, parent=parent, date=date)
+        self.account.total -= self.amount
+
+    def __str__(self):
+        return('Type%s Withdrawal%sAmount%s $%0.2f%sTransaction Date%s %s%s'
+               'Account%s %s%sDescription%s %s%sActive%s %s' %
+               (tag_delimiter, str_delimiter, tag_delimiter, self.amount,
+                str_delimiter, tag_delimiter, self.date.strftime(output_date),
+                str_delimiter, tag_delimiter, self.account.name, str_delimiter,
+                tag_delimiter, self.description, str_delimiter, tag_delimiter,
+                self.status))
+        
+######
+#UTILITY FUNCTIONS
+######
+def filter_accounts(accounts, fixed=True, percentage=True, gross=None, 
+                    active_only=True, id_values=[]):
+    """Filter Account objects based on properties.
+
+    Keyword Arguments:
+    accounts -- List of Account objects
+    fixed - Retrieve the accounts with a fixed transaction amount (default True)
+    percentage -- Retrieve the accounts with a percentage transaction amount
+        (default True)
+    gross -- Modifies the gross amount (rather than the net amount), only
+        applicable if this is a percentage amount type (default None
+        will ignore gross setting)
+    active_only -- Only return the active accounts (default True)
+    id_values -- List of ID values to match
+    
+    Returns:
+        List of Account objects for parameters
+
+    """
+    if not id_values:
+        matching = [account for account in accounts
+                    if (fixed and
+                        account.percentage_or_fixed == Account.FIXED) or \
+                       (percentage and \
+                        account.percentage_or_fixed == Account.PERCENTAGE)
+                    if gross == account.affect_gross or gross is None
+                    if not active_only or account.status]
+    else:
+        matching = [account for account in accounts \
+                        for id in id_values if account.id == id]
+    return matching
+
+def _require_reconfiguration(accounts, check_gross=True, check_net=True,
+                             active_only=True):
+    """Determine whether accounts need to be reconfigured.
+
+    Keyword arguments:
+    accounts -- List of Account objects to verify
+    check_gross -- Verify the gross accounts in the list (Default True)
+    check_net -- Verify the net accounts in the list (Default True)
+    active_only -- Only check the active accounts (Default True)
+
+    Returns:
+    Two Boolean values:
+        gross_reconfiguration - True if required, else False
+        net_reconfiguration - True if required, else False
+    
+    """
+    gross_reconfiguration = net_reconfiguration = False
+    if check_gross:
+        total = 0
+        for account in filter_accounts(accounts, gross=True, fixed=False,
+                                       active_only=active_only):
+            total += account._transaction_amount
+        if total > 10000:
+            gross_reconfiguration = True
+    if check_net:
+        total = 0
+        for account in filter_accounts(accounts, gross=False, fixed=False,
+                                       active_only=active_only):
+            total += account._transaction_amount
+        if total != 10000:
+            net_reconfiguration = True
+    return gross_reconfiguration, net_reconfiguration
+        
+#TODO 10 turn off prompting for deducting from gross?
+
+class BudseException(Exception):
+    """Base class for exceptions in this module."""
+    pass
+
+class FundsException(BudseException):
+    """Incorrect funds for a specified action."""
+    def __init__(self, expression):
+        self.expression = expression
+
+    def __str__(self):
+        return str(self.expression)
+
+class MetaException(BudseException):
+    """Exception raised for meta actions in the input.
+    """
+    def __init__(self, expression):
+        """Initialization method.
+
+        Keyword arguments:
+        expression -- Input that caused the exception to be raised
+         
+        """
+        self.expression = expression
+
+    def __str__(self):
+        return str(self.expression)
+
+class CancelException(MetaException):
+    """Exception raised to cancel out of a menu."""
+    def __init__(self, expression):
+        self.expression = expression
+
+    def __str__(self):
+        return str(self.expression)
+
+class DoneException(MetaException):
+    """Exception raised when completed with input."""
+    def __init__(self, expression):
+        self.expression = expression
+
+    def __str__(self):
+        return str(self.expression)
+
+class ConversionException(MetaException):
+    """Exception raised converting to the type specified."""
+    def __init__(self, expression):
+        self.expression = expression
+
+    def __str__(self):
+        return str(self.expression)
+
+      
+# Actions that have meaning for all menus
+meta_actions = 'c - Cancel\nd - Done\nq - Quit Program'
+output_date = '%m/%d/%Y'
+# TODO move the input handling functions to BudseCLI
+        
+            
+
+
+class BudseCLI(object):
+    """Command Line Interface for Budse."""
+
+    def __init__(self, session, user=None):
+        object.__init__(self)
+        self.session = session
+        self.user = user
+        self._status = []
+        
+    def _handle_input(self, prompt, base_type=str):
+        """Take all input, passing back errors as appropriate.
+
+        This function will be the single point of entry for user
+        input into the console.  It will catch exceptions, and pass
+        them back along with the user input so that callers can
+        decide what to do.
+
+        Keyword arguments:
+        prompt -- Printed to user 
+        base_type -- Type to expect in the input
+
+        Returns:
+        Expression coming from input
+
+        """
+        try:
+            base_input = raw_input(prompt)
+        except KeyboardInterrupt:
+            raise SystemExit('Quitting Budse')
+        if str(base_input).upper() == 'C':
+            raise CancelException('Cancel current menu')
+        elif str(base_input).upper() == 'D':
+            raise DoneException('User is done with input')
+        elif str(base_input).upper() == 'Q':
+            raise SystemExit('Quitting Budse')
+        try:
+            expression = base_type(base_input)
+        except Exception, e:
+            raise ConversionException("Couldn't convert %s to %s" %
+                                      (base_input, base_type))
+        return expression
+
+    def _confirm(self, prompt, default=False):
+        """Prompt user for a confirmation of something.
+
+        Keyword parameters:
+        prompt -- What question to ask the user
+        default -- Value that <RETURN> will be for (default False/no)
+
+        Returns:
+        Boolean for whether user confirms prompt
+        
+        """
+        confirm = None
+        yes_list = ('y', 'yes')
+        no_list = ('n', 'no')
+        if not default:
+            no_list += ('',)
+            values = 'y/N'
+        else:
+            yes_list += ('',)
+            values = 'Y/n'  
+        prompt = '%s [%s] ' % (prompt, values)
+        while confirm is None:
+            answer = self._handle_input(prompt).lstrip().lower()
+            if answer in no_list:
+                confirm = False
+            elif answer in yes_list:
+                confirm = True
+            else:
+                print('Not an acceptable value')
+        return confirm    
+
+    def _ask_date(self, default_date=datetime.date.today(),
+                  prompt='Date of transaction'):
+        """Query user for a date.
+    
+        Keyword parameters:
+        default_date -- Date to use (default today)
+        prompt_for -- What date describes (default transaction)
+
+        Returns:
+        datetime.date object of desired date
+
+        """
+        date = None
+        output_format = '%Y-%m-%d'
+        prompt = ('%s? (YYYY-MM-DD, default %s) ' % 
+                  (prompt, default_date.strftime(output_format)))
+        while date is None:
+            temp_input = self._handle_input(prompt)
+            if temp_input == '':
+                date = default_date
+            else:
+                try:
+                    date = datetime.date(int(temp_input[0:4]), 
+                                         int(temp_input[5:7]), 
+                                         int(temp_input[8:10]))
+                except ValueError:
+                    print('Invalid date')
+                # TODO: Try parsing differently on raised exceptions:
+                #     1) MM/DD/YYYY
+                #     2) MM/DD (default year to this year)
+                #     3) MM/DD/YY (default to this century)
+                # Also parse string rather than using hardcoded slices
+        return date
+
+    # Use this instead of _handle_input when possible
+    def _ask_string(self, prompt='Description? '):
+        """Query user for a string, usually a description.
+
+        Keyword arguments:
+        prompt -- How to query the user
+
+        Returns:
+        Input received for the description
+
+        """
+        return self._handle_input(prompt)
+
+    def _ask_amount(self, prompt='Amount? ', type=float, require_input=True):
+        """Query user for a float amount
+        
+        Keyword arguments:
+        prompt -- Output to the user to indicate input that's expected
+        type -- The type of amount that is expected
+        require_input -- Require the user to input a value
+
+        Returns:
+        Numeric value
+
+        """
+        amount = None
+        while amount is None:
+            try:
+                amount = self._handle_input(prompt, type)
+            except ConversionException:
+                print 'Invalid value'
+        # Only keep 2 decimal places of precision for these floats
+        return round(amount, 2)
+            
+    def _get_status(self):
+        """Reset the status after retrieving it."""
+        status_string = ''
+        for status in self._status:
+            status_string += '%s.  ' % status
+        else:
+            status_string = status_string[:-2]  # Chop those trailing spaces!
+        self._clear_status()
+        return status_string
+    def _set_status(self, status):
+        """Assign class-wide status"""
+        self._status.append(status)
+    status = property(_get_status, _set_status, doc='Global app status')
+
+    def _clear_status(self):
+        self._status = []
+        
+    def search(self):
+        """Search the database for matching transactions.
+
+        Returns:
+        A list Transaction objects
+
+        """
+        choice = self._handle_input('Search\n\n1 - Date Range\n2 - Date\n3 - '
+                                    'ID\n4 - Keywords\n%s\n\nChoice: ' %
+                                    meta_actions)
+        limit = 10
+        if choice == '1':
+            begin_date = self._ask_date(prompt='Start of transactions')
+            end_date = self._ask_date(prompt='End of transactions')
+            return self.session.query(Transaction).\
+                filter(Transaction.date >= begin_date).\
+                filter(Transaction.date <= end_date).\
+                filter(Transaction.parent == None).\
+                order_by(desc(Transaction.date))[:limit]
+        elif choice == '2':
+            date = self._ask_date(prompt='Transaction date')
+            return self.session.query(Transaction).\
+                filter(Transaction.date == date).\
+                filter(Transaction.parent == None).\
+                order_by(desc(Transaction.date))[:limit]
+        elif choice == '3':
+            id = self._handle_input('Unique ID of transaction: ', int)
+            return [self.session.query(Transaction).\
+                filter(Transaction.id == id).\
+                filter(Transaction.parent == None).one()]
+        elif choice == '4':
+            done = False
+            print 'Transaction description matching any of the keywords:\n'
+            keywords = []
+            while not done:
+                keywords.append('%%%s%%' % self._ask_string('Keyword: '))
+                done = self._confirm('Done entering keywords?', True)
+            if self._confirm('Limit transactions to search for?'):
+                limit = self._ask_amount(type=int, prompt='Limit: ')
+            return self.session.query(Transaction).\
+                filter(Transaction.parent == None).\
+                filter(or_(*[Transaction.description.contains(keyword) \
+                                 for keyword in keywords])).\
+                order_by(desc(Transaction.date))[:limit]
+        
+    def output_transactions(self, transactions):
+        """Output a list of transactions.
+
+        Keyword arguments:
+        transactions -- List of Transaction objects to output
+        
+        """
+        # Tags to not print in children transactions
+        restricted = ['ACTIVE', 'TRANSACTION DATE'] 
+        for parent_transaction in transactions:
+            if parent_transaction.id is not None:
+                print('------Transaction ID: %d------' % parent_transaction.id)
+            print((str(parent_transaction).replace(str_delimiter, '\n')).\
+                      replace(tag_delimiter, ':'))
+            if parent_transaction.children:
+                print('Sub-transactions:')
+            for transaction in parent_transaction.children:
+                action = amount = account = description = ''
+                for field in str(transaction).split(str_delimiter):
+                    field_information = field.split(tag_delimiter)
+                    tag = str(field_information[0]).upper()
+                    info = str(field_information[1]).strip()
+                    if tag.strip() in restricted:
+                        continue
+                    elif tag == 'TYPE':
+                        action = '%s of ' % info
+                    elif tag == 'AMOUNT':
+                        amount = info
+                    elif tag == 'DESCRIPTION':
+                        description = ' (%s)' % info
+                    elif tag == 'ACCOUNT':
+                        account = ' into %s' % info
+                print('    %s%s%s%s' % (action, amount, account, description))
+            print('')
+
+    def ask_deduction_list(self, prompt='Provide a list of deductions to make'):
+        """Prompt the user for their list of deductions
+        
         Keyword arguments:
         prompt -- Prompt to present to the user
-
+        
         Returns:
-        List of deductions if approved, empty otherwise
+        List of deductions
 
         """
         satisfied = False
@@ -1347,22 +965,19 @@ class User(DatabaseObject):
             deductions = []
             while 1:
                 clear_screen()
-                prompt = ('Deduction Menu:\n1 - Add Deduction\n'
-                          '2 - Print Deductions\n3 - Start Over'
+                prompt = ('Deduction Menu:\n1 - Add Deduction\n2 - Print '
+                          'Deductions\n3 - Delete Deductions And Start Over'
                           '\n%s\n%s\n\nInput: ' % (meta_actions, status))
                 status = ''
                 try:
-                    choice = _handle_input(prompt)
+                    choice = self._handle_input(prompt)
                 except DoneException:
                     break
-                except CancelException:
-                    deductions = []
-                    raise
                 if choice == '1':
-                    amount = _ask_amount()
-                    description = _ask_string()
+                    amount = self._ask_amount()
+                    description = self._ask_string()
                     prompt = 'Deduct %0.2f (%s)?' % (amount, description)
-                    if _confirm(prompt=prompt, default=True):
+                    if self._confirm(prompt, True):
                         deductions.append((amount, description))
                         status = 'Deduction added'
                     else:
@@ -1375,805 +990,22 @@ class User(DatabaseObject):
                 elif choice == '3':
                     deductions = []
                     status = 'Deductions cleared'
+                else:
+                    status = 'Invalid choice'
             full_list = 'Deductions:\n'
             if deductions:
                 for amount, description in deductions:
                     full_list += '%0.2f - %s\n' % (amount, description)
-                full_list += ('Are you sure that you want to '
-                              'use these deductions?')
+                full_list += 'Use these deductions?'
             else:
-                full_list = ('Are you sure that you don\'t want any '
-                             'deductions at this time?')
-            if _confirm(prompt=full_list, default=True):
+                full_list = "Are you sure that you don't want any deductions?"
+            if self._confirm(full_list, True):
                 satisfied = True
             else:
                 deductions = []
-                if not _confirm(prompt='Start over?', default=True):
+                if not self._confirm('Start over?', True):
                     satisfied = True
         return deductions
-            
-    def get_accounts(self):
-        """Get all of self's active accounts.
-
-        Returns:
-        List of Account objects belonging to this user
-
-        """
-        if account_table['id'] not in self.cache:
-            query, parameters = select([account_table['id']],
-                                       account_table['table'],
-                                       [(account_table['user'], self.id)])
-            self.cache[account_table['id']] = \
-                                      [account_by_id(row[account_table['id']])
-                                       for row in connector(query, parameters)]
-        return self.cache[account_table['id']]
-
-    def set_accounts(self, accounts):
-        """Save each of the user's accounts with the new information.
-
-        Keyword arguments:
-        accounts -- List of Account objects that are modified
-        
-        """
-        if accounts is not None:
-            for account in accounts:
-                account.save()
-        self.cache[account_table['id']] = accounts
-      
-    accounts = property(get_accounts, set_accounts, doc='User\'s accounts')
-
-    def _reconfigure_subaccounts(self, new_subaccount=None):
-        """Modify amounts for accounts to maintain requirements.
-
-        Keyword arguments:
-        new_subaccount -- New subaccount that is being added 
-            (default None the reconfigure all subaccounts)
-
-        Returns:
-        Complete list of user's Account objects
-        
-        """
-        gross_accounts = self.filter_accounts(fixed=False, gross=True)
-        if debug:
-            print 'Gross %%:\n%s\n' % gross_accounts
-        net_accounts = self.filter_accounts(fixed=False, gross=False)
-        if debug:
-            print 'Net %%:\n%s\n' % net_accounts
-        completed_accounts = self.filter_accounts(fixed=True, percentage=False)
-        if debug:
-            print 'Fixed accounts:\n%s\n' % completed_accounts
-        if new_subaccount is not None:
-            if new_subaccount.gross:
-                gross_accounts.append(new_subaccount)
-            else:
-                net_accounts.append(new_subaccount)
-        account_types = [(True, gross_accounts), (False, net_accounts)]
-
-        # Looping through both gross and net is necessary for certain situations
-        # (e.g., modifying an account from gross to net)
-        for gross_status, accounts in account_types:
-            if gross_status:
-                initial_prompt = ('Reconfigure Account Amounts\n\nModify the '
-                    'gross percentage accounts so that they are under 100%\n')
-            else:
-                initial_prompt = ('Reconfigure Account Amounts\n\nModify the '
-                    'net percentage accounts so that they are exactly 100%\n')
-            # Maintain temporary dictionary before save is confirmed
-            temporary_accounts = {}
-            for index, account in zip(range(len(accounts)), accounts):
-                temporary_accounts[index+1] = account
-            status = ''
-            # Mimic a do-while loop since always need to total up amounts
-            while 1:
-                total = 0.00
-                prompt = initial_prompt
-                for index in temporary_accounts:
-                    prompt += ('%d - %s (%0.2f%%)\n' %
-                               (index, temporary_accounts[index].name,
-                                temporary_accounts[index].amount*100))
-                    total += temporary_accounts[index].amount
-                if (len(temporary_accounts) == 0 or
-                    (not gross_status and total == 1.00) or
-                    (gross_status and total <= 1.00)):
-                    break
-                else:
-                    prompt += 'Total:%0.2f\n%s\nModify: ' % (total*100, status)
-                    choice = _handle_input(prompt, float)
-                    if choice in temporary_accounts:
-                        account_name = temporary_accounts[choice].name
-                        try:
-                            new_amount = _ask_amount()
-                            if _confirm('Use %0.2f for \'%s\'' %
-                                        (new_amount, account_name), True):
-                                temporary_accounts[choice].amount = new_amount
-                                status = '\'%s\' modified' % (account_name)
-                        except (CancelException, DoneException):
-                            status = 'Canceled change, continue to reconfigure'
-                    else:
-                        status = 'Invalid choice'
-            completed_accounts += [temporary_accounts[key]
-                                   for key in temporary_accounts]
-        return completed_accounts, 'Subaccounts reconfigured'
-
-    def filter_accounts(self, fixed=True, percentage=True, gross=None, 
-                        active_only=True, id=None):
-        """Get a filtered list of accounts for the user.
-    
-        Keyword arguments:
-        fixed - Retrieve the accounts with a fixed transaction amount
-            (default True)
-        percentage -- Retrieve the accounts with a percentage
-            transaction amount (default True)
-        gross -- Modifies the gross amount (rather than the net amount), only
-            applicable if this is a percentage amount type (default None
-            will ignore gross setting)
-        active_only -- Only return the active accounts (default True)
-        id -- Get a specific account, uses less objects and therefore less
-            database retrievals (default None)
-
-        Returns:
-        List of Account objects for parameters or a single Account object
-            for a specified id
-        
-        """
-        if id is None:
-            accounts = [acct for acct in self.accounts
-            if ((fixed and acct.type == account_table['fixed_type']) or
-                (percentage and acct.type == account_table['percentage_type']))
-            if (gross == acct.gross or gross is None)
-            if (not active_only or acct.status)]
-        else:
-            accounts = [acct for acct in self.accounts if acct.id == id].pop()
-        return accounts
-
-    def get_transactions(self, limit=10, restrict_type=None, subaccount=None,
-                         order_by_most_recent=True, keyword_list=None,
-                         begin_date=None, end_date=None, root_id=None):
-        """Retrieve a list of the user's transactions
-
-        Keyword arguments:
-        limit -- Limit on the number of returned values (default 10)
-        restrict_type -- Restrict transactions by action (default None)
-        account -- Account object to search for
-        order_by_most_recent -- Order the returned values (default True)
-        keyword_list -- List of terms to search for in the description
-            (using the LIKE comparison operator)
-        begin_date -- A datetime.datetime object for the start of
-            the date range
-        end_date -- A datetime.datetime object for the end of the date
-            range
-        root_id -- Retrieve group of transactions with this root_id
-            (default None)
-            
-        Returns:
-        List of (root_transaction, list of Transaction objects)
-
-        """
-        date_format = '%Y-%m-%d'
-        filters = [(transaction_table['user'], self.id)]
-        if restrict_type is not None:
-            if (restrict_type != transaction_table['deposit'] and
-                restrict_type != transaction_table['withdrawal'] and
-                restrict_type != transaction_table['deduction']):
-                raise TypeError('Invalid transaction action')
-            filters.append((transaction_table['action'], restrict_type))
-        if subaccount is not None:
-            if not isinstance(subaccount, Account):
-                raise TypeError('Invalid account object')
-            filters.append((transaction_table['account'], subaccount.id))
-        if begin_date is not None:
-            filters.append(('>=', transaction_table['date'],
-                            begin_date.strftime(date_format)))
-        if end_date is not None:
-            filters.append(('<=', transaction_table['date'],
-                            end_date.strftime(date_format)))
-        if root_id is not None:
-            filters.append((transaction_table['root_id'], root_id))
-        if keyword_list is not None:
-            for keyword in keyword_list:
-                filters.append(('LIKE', transaction_table['description'],
-                                '%%%s%%' % keyword))
-        if order_by_most_recent is not None:
-            if order_by_most_recent:
-                order = '%s DESC' % transaction_table['date']
-            else:
-                order = '%s ASC' % transaction_table['date']
-        query, arguments = select([transaction_table['root_id'],
-                                   transaction_table['id']],
-                                  transaction_table['table'],
-                                  filters=filters,
-                                  order=[order],
-                                  group=[transaction_table['root_id']],
-                                  limit=limit)
-        root_transactions = []
-        for row in connector(query, arguments):
-            root_id = row[transaction_table['root_id']]
-            root_transaction = Transaction(\
-                id=int(row[transaction_table['root_id']]))
-            query, arguments = select([transaction_table['id']],
-                                      transaction_table['table'],
-                                      [(transaction_table['root_id'], root_id),
-                                       ('<>', transaction_table['id'],
-                                        root_transaction.id)])
-            root_group = []
-            for row in connector(query, arguments):
-                transaction = Transaction(id=int(row[transaction_table['id']]))
-                root_group.append(transaction)
-            root_transactions.append((root_transaction, root_group))
-        return root_transactions
-    transactions = property(get_transactions, doc='List of transactions')
-
-    def save(self):
-        """Save the changes that were made to the User object.
-        """
-        insertions = []
-        updates = []
-        if self.id is None:
-            for column_name, value in self.dirty.iteritems():
-                if isinstance(value, DatabaseObject):
-                    insertions.append((column_name, value.id))
-                else:
-                    insertions.append((column_name, value))
-            query, arguments = insert(insertions, user_table['table'])
-            connector(query, arguments)
-            query = 'SELECT last_insert_rowid()'
-            self.id = int(connector(query).fetchone()[0])
-        else:
-            for column_name, value in self.dirty.iteritems():
-                if isinstance(value, DatabaseObject):
-                    updates.append((column_name, value.id))
-                else:
-                    updates.append((column_name, value))
-                # optimization over just clearing cache
-                self.cache[column_name] = value 
-            if updates:
-                query, arguments = update(updates, user_table['table'],
-                                          [(user_table['id'], self.id)])
-                connector(query, arguments)
-        self.dirty = {}
-    def __str__(self):
-#TODO print deductions?
-        string_repr = '%sUser: %s\n' % (self.indent, self.name)
-        string_repr += '%sUse Whole Account Actions: %s\n' % (self.indent,
-                                                    self.whole_account_actions)
-#         string_repr += '%sPrompt To Affect Gross Amount: %s\n' % (self.indent,
-#                                                          self.prompt_for_gross)
-        string_repr += '%sLast login: %s\n' % (self.indent, self.timestamp)
-        string_repr += '%sAccounts:\n\n' % self.indent
-        for account in self.accounts:
-            string_repr += '%s%s\n' % (self.indent, account)
-        if self.status:
-            user_status = 'Active'
-        else:
-            user_status = 'Inactive'
-        string_repr += '%sStatus: %s\n' % (self.indent, user_status)
-        return string_repr
-
-
-class Transaction(DatabaseObject):
-
-    def __init__(self, user=None, amount=None, date=None, description=None,
-                 action=None, account=None, root_id=None, id=None):
-        """This is the base transaction when no side effect is required.
-
-        Keyword arguments:
-        id -- Unique ID of the transaction in the database
-        user_id -- User for whom the transaction is for
-        amount -- Dollar amount of transaction (default 0.00)
-        account -- Account of the user
-        date -- Datetime.date object representing transaction date
-        description -- User description of transaction details (default None)
-
-        """
-        try:
-            DatabaseObject.__init__(self, table=transaction_table['table'],
-                                    id_column=transaction_table['id'], id=id)
-        except ValueError:
-            DatabaseObject.__init__(self, table=transaction_table['table'],
-                                    id_column=transaction_table['id'])
-        if self.id is not None:
-            query, parameters = select([transaction_table['date'],
-                                        transaction_table['user'],
-                                        transaction_table['account'], 
-                                        transaction_table['amount'],
-                                        transaction_table['action'],
-                                        transaction_table['description'],
-                                        transaction_table['root_id']],
-                                       transaction_table['table'],
-                                       [(transaction_table['id'], id)])
-            row = connector(query, parameters).fetchone()
-            temporary_date = str(row[transaction_table['date']])
-            self.date = datetime.date(int(temporary_date[0:4]),
-                                      int(temporary_date[5:7]),
-                                      int(temporary_date[8:10]))
-            self.user = user_by_id(int(row[transaction_table['user']]))
-            self.amount = float(row[transaction_table['amount']])
-            self.action = str(row[transaction_table['action']])
-            self.description = str(row[transaction_table['description']])
-            self.root_id = int(row[transaction_table['root_id']])
-            if row[transaction_table['account']] is not None:
-                self.account = self.user.filter_accounts(
-                    id=int(row[transaction_table['account']]))
-            else:
-                self.account = None
-        else:
-            self.date = date
-            if not isinstance(user, User):
-                raise TypeError('Bad user for Transaction class')
-            self.user = user
-            self.original_amount = amount
-            self.amount = amount
-            self.description = description
-            self.account = account
-            self.root_id = root_id
-            self.action = action
-
-    (get_date, set_date, del_date) = \
-                (DatabaseObject.accessors(transaction_table['date']))
-    date = property(get_date, set_date, del_date, doc='Transaction date')
-
-    (get_ts, set_ts, del_ts) = \
-                (DatabaseObject.accessors(transaction_table['timestamp']))
-    timestamp = property(get_ts, set_ts, del_ts, doc='Timestamp of input')
-
-    (get_user, set_user, del_user) = \
-                (DatabaseObject.accessors(transaction_table['user']))
-    user = property(get_user, set_user, del_user, doc='User ID')
-    
-    (get_acct_id, set_acct, del_acct) = \
-                (DatabaseObject.accessors(transaction_table['account']))
-
-    def get_acct(self):
-        """Stored in the database as an ID but need an object.
-        """
-        if transaction_table['account'] in self.dirty:
-            return self.dirty[transaction_table['account']]
-        if transaction_table['account'] not in self.cache:
-            self.cache[transaction_table['account']] = \
-                                            account_by_id(self.get_acct_id())
-        return self.cache[transaction_table['account']]
-
-    account = property(get_acct, set_acct, del_acct, doc='Account object')
-    
-    (get_amt, set_amt, del_amt) = \
-                (DatabaseObject.accessors(transaction_table['amount']))
-    amount = property(get_amt, set_amt, del_amt, doc='How much transacted')
-
-    (get_act, set_act, del_act) = \
-                (DatabaseObject.accessors(transaction_table['action']))
-    action = property(get_act, set_act, del_act, doc='Transaction type')
-
-    (get_desc, set_desc, del_desc) = \
-                (DatabaseObject.accessors(transaction_table['description']))
-    description = property(get_desc, set_desc, del_desc, doc='User described')
-
-    (get_root, set_root, del_root) = \
-                (DatabaseObject.accessors(transaction_table['root_id']))
-    root_id = property(get_root, set_root, del_root, doc='Group by this ID')
-
-    (get_stat, set_stat, del_status) = \
-                (DatabaseObject.accessors(transaction_table['status']))
-
-    def get_status(self):
-        """Convert the database status of the transaction into a word.
-
-        Returns:
-        True if active, False otherwise
-
-        """
-        if self.get_stat() == transaction_table['active']:
-            return True
-        else:
-            return False
-
-    def set_status(self, status):
-        """Assign new status to the transaction.
-        
-        Keyword arguments:
-        status -- Boolean
-
-        """
-        if bool(status):
-            new_status = transaction_table['active']
-        else:
-            new_status = transaction_table['inactive']
-        self.set_stat(new_status)
-
-    status = property(get_status, set_status, del_status, 'Active status')
-
-    def _create_deductions(self, deductions):
-        """Normalize list of deductions to Transaction objects
-
-        Use the ID of the calling object (i.e., self) as the root ID
-        of each of these deductions.
-
-        Keyword arguments:
-        deductions -- List of (amount, description) tuples
-
-        Returns:
-        total_deduction -- Sum of all deductions
-        deductions -- List of Transaction objects, each a deduction
-
-        """
-        total_deduction = 0.00
-        deduction_transactions = []
-        if deductions is not None:
-            for amount, description in deductions:
-                total_deduction += amount
-                deduction = Transaction(user=self.user, amount=amount,
-                                        date=self.date, root_id=self.id,
-                                        description=description,
-                                        action=transaction_table['deduction'])
-                deduction_transactions.append(deduction)
-        return total_deduction, deduction_transactions
-
-    def save(self):
-        """Store the class variables into the database.
-        """
-        now = datetime.datetime.now()
-        timestamp = '%s-%02d-%02d %02d:%02d:%02d' % (now.year, now.month,
-                                 now.day, now.hour, now.minute, now.second)
-        self.timestamp = timestamp
-        insertions = []
-        updates = []
-        if self.id is None:
-            self.status = True
-            for column_name, value in self.dirty.iteritems():
-                if isinstance(value, DatabaseObject):
-                    insertions.append((column_name, value.id))
-                else:
-                    insertions.append((column_name, value))
-            query, parameters = insert(insertions, transaction_table['table'])
-            connector(query, parameters)
-            query = 'SELECT last_insert_rowid()'
-            self.id = int(connector(query).fetchone()[0])
-            if self.root_id is None:
-                self.root_id = self.id
-            query, parameters = update([(transaction_table['root_id'],
-                                         self.root_id)],
-                                       transaction_table['table'],
-                                       [(transaction_table['id'], self.id)])
-            connector(query, parameters)
-            if self.account is not None:
-                if self.action == transaction_table['deposit']:
-                    self.account.total += self.amount
-                    self.account.save()
-                elif self.action == transaction_table['withdrawal']:
-                    self.account.total -= self.amount
-                    self.account.save()
-        else:
-            for column_name, value in self.dirty.iteritems():
-                if isinstance(value, DatabaseObject):
-                    updates.append((column_name, value.id))
-                else:
-                    updates.append((column_name, value))
-                # optimization over forcing user access to cache value
-                self.cache[column_name] = value
-            if updates:
-                query, parameters = update(updates, transaction_table['table'],
-                                          [(transaction_table['id'], self.id)])
-                connector(query, parameters)
-        self.dirty = {}
-        
-    def __str__(self):
-        if self.action == transaction_table['deposit']:
-            action_type = 'Deposit'
-        elif self.action == transaction_table['withdrawal']:
-            action_type = 'Withdrawal'
-        elif self.action == transaction_table['deduction']:
-            action_type = 'Deduction'
-        elif self.action == transaction_table['transfer']:
-            action_type = 'Transfer'
-        else:
-            action_type = 'Informational'
-        string_repr = '%sAction: %s\n' % (self.indent, action_type)
-        string_repr += '%sAmount: $%0.2f\n' % (self.indent, self.amount)
-        string_repr += '%sTransaction Date: %s\n' % (self.indent, 
-                                             self.date.strftime(output_date))
-        if self.account is not None:
-            acct = self.account.name
-        elif (self.action == transaction_table['deduction'] or
-              self.action == transaction_table['transfer']):
-            acct = 'N/A'
-        else:
-            acct = 'Whole account'
-        string_repr += '%sAccount: %s\n' % (self.indent, acct)
-        string_repr += '%sDescription: %s\n' % (self.indent, self.description)
-        try:
-            if self.status:
-                transaction_status = 'Active'
-            else:
-                transaction_status = 'Inactive'
-        except TypeError:
-            transaction_status = 'Unsaved'
-        string_repr += '%sStatus: %s\n' % (self.indent, transaction_status)
-        return string_repr
-
-
-class Deposit(Transaction):
-
-    def __init__(self, user, amount, date, description=None,
-                     account=None, root_id=None, deductions=None):
-        """An object representation of a deposit transaction.
-
-        Keyword arguments:
-        user -- Unique user account
-        amount -- Amount of transaction
-        date -- Date that transaction occurred
-        description -- User description of transaction (default None)
-        account -- Unique user subaccount 
-            (default None - will split deposit according to database)
-        root_id -- Transaction ID of the meta transaction (default None - it
-            will be set to its own ID once it has been determined on INSERT)
-        deductions -- A list of tuples representing deductions of the form
-            (amount, description) (default None)
-
-        For a 'whole account' deposit, will perform calculation and
-        instantiation of subdeposits that each represent the parts of
-        the whole deposit.
-
-        When broken down, this results in a loop each for:
-        1) Percentage amounts on the gross
-        2) Fixed amounts on the net
-        3) Percentage amounts on the net
-
-        """
-        Transaction.__init__(self, user=user, amount=amount, account=account,
-                             description=description, root_id=root_id,
-                             date=date, action=transaction_table['deposit'])
-        self.deductions = deductions
-        if self.deductions is not None:
-            self.total_deduction, self.deductions = \
-                Transaction._create_deductions(self, self.deductions)
-        else:
-            self.total_deduction = 0.00
-            self.deduction = None
-
-        if self.account is None:
-            gross = running_total = self.amount
-            self.subaccount_deposits = []
-            for account in self.user.filter_accounts(fixed=False, gross=True):
-                amount = gross * account.amount
-                running_total -= amount
-                subdeposit = Deposit(user=self.user, amount=amount,
-                                     date=self.date, account=account, 
-                                     description=self.description)
-                self.subaccount_deposits.append(subdeposit)
-            running_total -= self.total_deduction
-            for account in self.user.filter_accounts(percentage=False):
-                if running_total > 0:
-                    running_total -= account.amount
-                    subdeposit = Deposit(user=self.user, amount=account.amount,
-                                         date=self.date, account=account, 
-                                         description=self.description)
-                    self.subaccount_deposits.append(subdeposit)
-            if running_total > 0:
-                net = running_total
-                for account in self.user.filter_accounts(fixed=False,
-                                                         gross=False):
-                    amount = net * account.amount
-                    running_total -= amount
-                    subdeposit = Deposit(user=self.user, amount=amount,
-                                         date=self.date, account=account,
-                                         description=self.description)
-                    self.subaccount_deposits.append(subdeposit)
-            if debug: 
-                print ('!!!!!\nTotal should be 0, actually: %s\n!!!!!' % 
-                       running_total)
-        self.amount -= self.total_deduction
-
-    def save(self):
-        """Save the transaction details and update the total in the database.
-        """
-        Transaction.save(self)
-        if self.account is None:
-            for subdeposit in self.subaccount_deposits:
-                subdeposit.root_id = self.id
-                subdeposit.save()
-        if self.deductions is not None:
-            for deduction in self.deductions:
-                deduction.root_id = self.id
-                deduction.save()
-
-    def __str__(self):
-        """Print out details of the deposit."""
-        string_repr = Transaction.__str__(self)
-        if self.account is None:
-            string_repr += '%s%d subdeposits:\n' % (self.indent,
-                                        len(self.subaccount_deposits))
-            for subdeposit in self.subaccount_deposits:
-                string_repr += ('%s  Deposit: $%0.2f - %s\n' % (self.indent,
-                                subdeposit.amount, subdeposit.account.name))
-        if self.original_amount != self.amount:
-            string_repr += '%sOriginal Amount: $%0.2f\n' % (self.indent,
-                                                    self.original_amount)
-        if self.deductions is not None:
-            for transaction in self.deductions:
-                string_repr += ('%s  Deduction: $%0.2f - %s\n' % (self.indent,
-                                transaction.amount, transaction.description))
-        return string_repr
-
-
-class Withdrawal(Transaction):
-
-    def __init__(self, user, amount, date, description=None,
-                     account=None, root_id=None, deductions=None):
-        """An object representation of a withdrawal transaction.
-
-        Keyword arguments:
-        user -- A unique user account
-        amount -- Amount of transaction
-        date -- Date that transaction occurred
-        description -- User description of transaction (default None)
-        account -- Unique user sub-account 
-            (default None - will split withdrawal according to database)
-        root_id -- Transaction ID of the meta transaction (default None - it
-            will be set to its own ID once it has been determined on INSERT)
-        deductions -- A list of tuples representing deductions of the form
-            (amount, description) (default None)
-
-        """
-        Transaction.__init__(self, user=user, amount=amount, account=account,
-                             description=description, root_id=root_id,
-                             date=date, action=transaction_table['withdrawal'])
-        if deductions is not None:
-            self.total_deduction, self.deductions = \
-                Transaction._create_deductions(self, deductions)
-        else:
-            self.total_deduction = 0.00
-            self.deductions = None
-
-        if self.account is None:
-            gross = running_total = self.amount
-            self.subaccount_withdrawals = []
-            for account in self.user.filter_accounts(fixed=False, gross=True):
-                amount = gross * account.amount
-                running_total -= amount
-                subwithdrawal = Withdrawal(self.user, amount, self.date,
-                                           self.description, account, self.id)
-                self.subaccount_withdrawals.append(subwithdrawal)
-            running_total -= self.total_deduction
-            for account in self.user.filter_accounts(percentage=False):
-                if running_total > 0:
-                    running_total -= account.amount
-                    subwithdrawal = Withdrawal(self.user, account.amount,
-                                 self.date, self.description, account, self.id)
-                    self.subaccount_withdrawals.append(subwithdrawal)
-            if running_total > 0:
-                net = running_total
-                for account in self.user.filter_accounts(fixed=False,
-                                                         gross=False):
-                    amount = net * account.amount
-                    running_total -= amount
-                    subwithdrawal = Withdrawal(self.user, amount, self.date,
-                                            self.description, account, self.id)
-                    self.subaccount_withdrawals.append(subwithdrawal)
-            if debug: 
-                print ('!!!!!\nTotal should be 0, actually: %s\n!!!!!' % 
-                       running_total)
-        self.amount -= self.total_deduction
-
-    def save(self):
-        """Save the transaction details and update the total in the database.
-        """
-        Transaction.save(self)
-        if self.account is None:
-            for subwithdrawal in self.subaccount_withdrawals:
-                subwithdrawal.root_id = self.id
-                subwithdrawal.save()
-
-    def __str__(self):
-        """Print out details of the withdrawal."""
-        string_repr = Transaction.__str__(self)
-        if self.account is None:
-            string_repr += ('%s%d subwithdrawals:\n' % (self.indent, 
-                            len(self.subaccount_withdrawals)))
-            for subwithdrawal in self.subaccount_withdrawals:
-                string_repr += ('%s  Withdrew $%0.2f - %s\n' % (self.indent,
-                            subwithdrawal.amount, subwithdrawal.account.name))
-        if self.original_amount != self.amount:
-            string_repr += '%sOriginal Amount: $%0.2f\n' % (self.indent,
-                                                    self.original_amount)
-        if self.deductions is not None:
-            string_repr += '%sTotal Deduction: $%0.2f\n' % (self.indent,
-                                                    self.total_deduction)
-            for transaction in self.deductions:
-                string_repr += ('%s  Applied $%0.2f - %s\n' % (self.indent,
-                                transaction.amount, transaction.description))
-        return string_repr
-
-
-class Budse(object):
-
-    def __init__(self, user):
-        object.__init__(self)
-        self.user = user
-        self._status = ''
-        
-    def _get_status(self):
-        """Reset the status after retrieving it."""
-        status_string = self._status
-        self._status = ''
-        return status_string
-
-    def _set_status(self, status):
-        """Assign class-wide status"""
-        self._status = status
-
-    status = property(_get_status, _set_status, doc='Global application status')
-
-    def search(self, keywords=None, limit=10, subaccount=None,
-               most_recent=True, begin_date=None, unique_id=None,
-               end_date=None, restrict=None, interactive=True):
-        """Search the database for matching transactions.
-
-        Keyword arguments:
-        keywords -- List of keyword(s) to search for (default None)
-        limit -- Maximum size of return list (default 10)
-        begin_date -- Datetime.date object inclusive
-        end_date -- Datetime.date object inclusive
-        subaccount -- Search particular subaccount (default None - search all)
-        most_recent -- Order the most recent searches first (default True)
-        restrict -- Restrict by transaction type
-        unique_id -- Unique ID of the transaction
-        interactive -- Prompt user for what to do
-
-        Returns:
-        A list of (root_transaction, [transaction_group]) tuples
-
-        """
-        if interactive:
-            prompt = ('Search\n\n1 - Date Range\n2 - Date\n3 - ID\n4 - Keywords\n'
-                      '%s\n\nChoice: ' % meta_actions)
-            try:
-                choice = _handle_input(prompt)
-                if choice == '1':
-                    begin_date = self._ask_date(prompt='Start of transactions')
-                    end_date = self._ask_date(prompt='End of transactions')
-                elif choice == '2':
-                    begin_date = self._ask_date(prompt='Transaction date')
-                    end_date = begin_date
-                elif choice == '3':
-                    unique_id = _handle_input('Unique ID of transaction: ', int)
-                    limit = 1
-                elif choice == '4':
-                    done = False
-                    print 'Transaction description matching all keywords:\n'
-                    if keywords is None:
-                        keywords = []
-                    while not done:
-                        keywords.append(_ask_string('Keyword: '))
-                        done = _confirm(prompt='Done entering keywords?',
-                                        default=True)
-                    if _confirm(prompt='Limit transactions to search for?'):
-                        limit = _ask_amount(type=int, prompt='Limit: ')
-                    
-            except (CancelException, DoneException):
-                raise
-
-        return self.user.get_transactions(subaccount=subaccount, 
-                                          order_by_most_recent=most_recent,
-                                          limit=limit,
-                                          keyword_list=keywords,
-                                          begin_date=begin_date,
-                                          end_date=end_date,
-                                          restrict_type=restrict,
-                                          root_id=unique_id)
-        
-    def output_transactions(self, transactions):
-        """Output a list of transactions.
-
-        Keyword arguments:
-        transactions -- List of Transaction objects to output
-        
-        """
-        if transactions is not None:
-            for root_transaction, group in transactions:
-                print '-------Transaction ID: #%d-------' % root_transaction.id
-                print root_transaction
-                for item in group:
-                    item.indent = '   '
-                    print item
 
     def make_deposit(self):
         """Initiate a new deposit.
@@ -2181,220 +1013,211 @@ class Budse(object):
         Prompt the user for the necessary parameters for a deposit into
         either the entire account according to the user specifications 
         (i.e., the account types and amounts) or into a particular
-        subaccount.
+        account.
 
         """
-        print 'Make A Deposit\n'
+        print('Make A Deposit\n')
         try:
             date = self._ask_date()
-            amount = _ask_amount()
-            description = _ask_string()
+            amount = self._ask_amount()
+            description = self._ask_string()
             account = None
-            if not self._transact_for_whole_account(is_deposit=True):
-                account = self._ask_subaccount()
-            deductions = None
-            if (_confirm(prompt='Deduct from gross?')):
-                if _confirm(prompt='Use stored deductions?'):
-                    deductions = self.user.deductions
+            if not self._transact_for_whole_account():
+                account = self._ask_account('Deposit into which account: ')
+            deduction_tuples = None
+            deductions = []
+            if self._confirm('Deduct from gross?'):
+                if self._confirm('Use stored deductions?'):
+                    deduction_tuples = self.user.deductions
+                    #TODO load from self.user.deductions instead of assigning
+                    #     them?  maybe change ask_deduction_list to 
+                    #     (optionally) take an initialized deduction list
                 else:
-                    deductions = self.user.ask_deduction_list()
-            new_deposit = Deposit(user=self.user, amount=amount, date=date,
+                    deduction_tuples = self.ask_deduction_list()
+                if deduction_tuples is not None:
+                    for (amt, desc) in deduction_tuples:
+                        deductions.append(
+                            Deduction(user=self.user, date=date, amount=amt,
+                                      description=desc))
+            try:
+                deposit = Deposit(date=date, user=self.user, amount=amount,
                                   description=description, account=account,
                                   deductions=deductions)
-            print '\n==  Deposit Details  ==\n%s' % new_deposit
-            if _confirm(prompt='Execute deposit?', default=True):
-                new_deposit.save()
-                print 'new_deposit account: %s' % new_deposit.account
-                if new_deposit.account is None:
-                    target = 'Whole Account'
-                else:
-                    target = new_deposit.account.name
-                self.status = ('Deposited $%0.2f into %s' %
-                               (new_deposit.amount, target))
+            except FundsException, e:
+                self.status = str(e)
+                return
             else:
-                new_deposit.discard()
-                self.status = 'Deposit canceled'
+                self.session.add(deposit)
+                indent = '  '
+                # TODO get XML back from __str__ function, which can be parsed
+                #    more easily?  Might not be that necessary, though since it
+                #    is just a string for output
+                print('\n==  Deposit Details  ==\n')
+                self.output_transactions([deposit])
+                if self._confirm('Execute deposit?', True):
+                    self.session.commit()
+                    if deposit.account is None:
+                        target = 'Whole Account'
+                    else:
+                        target = deposit.account.name
+                    self.status = ('Deposited $%0.2f into %s' %
+                                   (deposit.amount, target))
+                else:
+                    self.session.rollback()
+                    self._clear_status()
+                    self.status = 'Deposit canceled'
         except (CancelException, DoneException):
+            self._clear_status()
             self.status = 'Deposit canceled'
 
     def make_withdrawal(self):
         """Initiate a new withdrawal.
 
         Prompt the user for the necessary parameters for a withdrawal 
-        either from the entire account or from an individual subaccount.
+        either from the entire account or from an individual account.
 
         """
-        print 'Make A Withdrawal\n'
+        print('Make A Withdrawal\n')
         try:
             date = self._ask_date()
-            amount = _ask_amount()
-            description = _ask_string()
-            account = None
-            if not self._transact_for_whole_account(is_deposit=False):
-                account = self._ask_subaccount()
-            new_withdrawal = Withdrawal(user=self.user, amount=amount,
-                                        date=date, description=description,
-                                        account=account)
-            print '\n== Withdrawal Details ==\n%s' % new_withdrawal
-            if _confirm(prompt='Execute withdrawal?', default=True):
-                new_withdrawal.save()
-                if new_withdrawal.account is None:
-                    target = 'Whole Account'
-                else:
-                    target = new_withdrawal.account.name
+            amount = self._ask_amount()
+            description = self._ask_string()
+            account = self._ask_account()
+            withdrawal = Withdrawal(user=self.user, amount=amount,
+                                    date=date, description=description,
+                                    account=account)
+            self.session.add(withdrawal)
+            print('\n== Withdrawal Details ==')
+            self.output_transactions([withdrawal])
+            if self._confirm('Execute withdrawal?', True):
+                self.session.commit()
                 self.status = ('Withdrew $%0.2f from %s' %
-                               (new_withdrawal.amount, target))
+                               (withdrawal.amount, withdrawal.account.name))
             else:
-                new_withdrawal.discard()
+                self.session.rollback()
+                self._clear_status()
                 self.status = 'Withdrawal canceled'
         except (CancelException, DoneException):
+            self._clear_status()
             self.status = 'Withdrawal canceled'
 
     def make_transfer(self):
-        """Execute a transfer between subaccounts.
+        """Execute a transfer between accounts.
         
         Essentially this will just be a deposit and a withdrawal of the
         same amount, but the idea of a transfer is useful to the user
         because the action seems more atomic to them.
 
-        Also the two actions can be grouped together with the same root_id
+        Also the two actions can be grouped together with the same root_transaction_id
         so that an undo would yield the proper result.
 
         """
-        print 'Transfer Between Subaccounts\n'
+        print('Transfer Between Accounts\n')
         date = datetime.date.today()
         try:
-            self.print_balance(include_all=True, include_total=False)
-            withdrawal_account = self._ask_subaccount(prompt='From: ')
-            deposit_account = self._ask_subaccount(prompt='To: ')
-            print ('From: %s (%0.2f)\nTo: %s (%0.2f)\n' % 
-                   (withdrawal_account.name, withdrawal_account.total,
-                    deposit_account.name, deposit_account.total))
-            amount = _ask_amount()
-            description = _ask_string()
-            transfer = Transaction(user=self.user, amount=amount, date=date,
-                                   action=transaction_table['transfer'],
-                                   description=description)
-            print '\n== Transfer Details ==\n%sFrom: %s\nInto: %s' % (transfer,
-                                 withdrawal_account.name, deposit_account.name)
-            if _confirm(prompt='Execute transfer?', default=True):
-                transfer.save()
-                transfer_id = transfer.id
-                new_withdrawal = Withdrawal(user=self.user, amount=amount, 
-                                            date=date, description=description,
-                                            root_id=transfer_id,
-                                            account=withdrawal_account)
-                new_withdrawal.save()
-                new_deposit = Deposit(user=self.user, amount=amount, date=date,
-                                      description=description, 
-                                      account=deposit_account,
-                                      root_id=transfer_id)
-                new_deposit.save()
-                self.status = ('Completed transfer of $%0.2f from %s to %s\n'
-                               % (transfer.amount, withdrawal_account.name,
-                                  deposit_account.name))
+            self.print_balance(include_all=True, include_user_total=False)
+            withdrawal_account = self._ask_account(prompt='Transfer from: ')
+            deposit_account = self._ask_account(prompt='Transfer to: ')
+            print('Transfer from: %s (%0.2f)\nTransfer to: %s (%0.2f)\n' % 
+                  (withdrawal_account.name, withdrawal_account.total,
+                   deposit_account.name, deposit_account.total))
+            amount = self._ask_amount()
+            description = self._ask_string()
+            transfer = Transfer(user=self.user, amount=amount, date=date,
+                                description=description,
+                                to_account=deposit_account,
+                                from_account=withdrawal_account)
+            print('\n== Transfer Details ==')
+            self.output_transactions([transfer])
+            if self._confirm('Execute transfer?', default=True):
+                self.session.add(transfer)
+                self.session.commit()
+                self.status = ('Transferred %0.2f from %s to %s' %
+                               (transfer.amount, transfer.from_account.name,
+                                transfer.to_account.name))
             else:
-                transfer.discard()
+                self.session.rollback()
+                self._clear_status()
                 self.status = 'Transfer canceled'
         except (CancelException, DoneException):
+            self._clear_status()
             self.status = 'Transfer canceled'
     
-    def reverse_transaction(self, root_id):
-        """Undo whatever effect a transaction group had.
-
-        Keyword arguments:
-        root_id -- The root ID that groups the entire transaction.
-        
-        """
-        root, transactions = self.user.get_transactions(limit=50,
-                                                        root_id=root_id).pop()
-        if len(transactions) == 0:
-            transactions.append(root)
-        for transaction in transactions:
-            if ((transaction.action == transaction_table['deposit'] and
-                transaction.status) or
-                (transaction.action == transaction_table['withdrawal'] and
-                 not transaction.status)):
-                transaction.account.total -= transaction.amount
-            elif ((transaction.action == transaction_table['withdrawal'] and
-                   transaction.status) or
-                  (transaction.action == transaction_table['deposit'] and
-                   not transaction.status)):
-                transaction.account.total += transaction.amount
-            transaction.account.save()
+    def reverse_transaction(self):
+        """Undo whatever effect a transaction group had."""
+        id = self._handle_input('Transaction ID: ', int)
+        try:
+            transaction = self.session.query(Transaction).\
+                          filter(Transaction.id == id).\
+                          filter(Transaction.parent == None).one()
+        except NoResultFound:
+            print('ID is not a valid root transaction ID')
+        self.output_transactions([transaction])
+        if self._confirm('Reverse Transaction? ', default=True):
             transaction.status = not transaction.status
-            transaction.save()
+            app.status = 'Transaction %d reversed' % id
+        else:
+            app.status = 'Transaction %d not reversed' % id
 
-    def print_balance(self, subaccount=None, include_total=True, 
+    def print_balance(self, account=None, include_user_total=True, 
                       include_all=False):
-        """The balance of a specific subaccount
+        """The balance of a specific account.
 
         Keyword parameters:
-        subaccount -- Account object to get balance for (default None)
-        include_total -- Whether or not to include the entire user total
+        account -- Account object to get balance for (default None)
+        include_user_total -- Whether or not to include the entire user total
             (default True)
-        include_all -- Supercedes subaccount parameter and will print
-            out all subaccount totals (default False)
-        spacing -- Amount of spaces to pad with whitespace (default 16)
+        include_all -- Supercedes account parameter and will print out all
+            account totals (default False)
 
         """
-        if subaccount is not None:
-            if _confirm(prompt='Retrieve a subaccount balance'):
-                try:
-                    subaccount = self._ask_subaccount(
-                        prompt='Get balance for which subaccount: ')
-                except (CancelException, DoneException):
-                    print 'Interrupted balance check'
-                    return
-            subaccount_total = '$%0.2f' % subaccount.total
-            print '%s = %s' % (subaccount.name.ljust(longest_name), 
-                               subaccount_total.rjust(longest_total))
-        else:
-            accounts = self.user.accounts
-            account_totals = []
+        if account is None:
+            totals = []
             longest_name = 0
-            longest_total = 3
+            longest_total = 4  # length of '0.00'
             user_total = 0.00
-            for account in accounts:
+            for account in self.user.accounts:
+                totals.append((account.name, '%0.2f' % account.total))
                 name_length = len(str(account.name))
-                account_total = '%0.2f' % account.total
-                account_totals.append((account.name, account_total))
                 if name_length > longest_name:
                     longest_name = name_length
-                if include_total:
+                total_length = len(str('%0.2f' % account.total))
+                if total_length > longest_total:
+                    longest_total = total_length
+                if include_user_total:
                     user_total += account.total
-                account_total_length = len(str(account_total))
-                if account_total_length > longest_total:
-                    longest_total = account_total_length
-            if include_total:
-                user_total_string = '%0.2f' % user_total
-                user_total_length = len(str(user_total_string))
+            if include_user_total:
+                user_total_length = len(str('%0.2f' % user_total))
                 if user_total_length > longest_total:
                     longest_total = user_total_length
+            #TODO this can be done with new str.format function
             if include_all:
-                print 'Account balances: '
-                for account_name, account_total in account_totals:
-                    print '%s = %s' % (account_name.ljust(longest_name),
-                                       account_total.rjust(longest_total))
-            if include_total:
+                print('Account balances: ')
+                for (name, total) in totals:
+                    print('%s = %s' % (name.ljust(longest_name),
+                                       total.rjust(longest_total)))
+            if include_user_total:
                 if include_all:
-                    print (' ' * longest_name) + '   ' + ('-' * longest_total)
-                print '%s = %s\n' % ('Total'.ljust(longest_name),
-                                     user_total_string.rjust(longest_total))
+                    print((' ' * longest_name) + '   ' + ('-' * longest_total))
+                user_total_string = '%0.2f' % user_total
+                print('%s = %s\n' % ('Total'.ljust(longest_name),
+                                     user_total_string.rjust(longest_total)))
+        else:
+            print('%s = $%0.2f' % (account.name, account.total))
 
     def create_report(self):
-        """Prompt user for dates and output format to create a report from.
-
-        """
+        """Report menu."""
         while 1:
-            prompt = ('Create Report\n\n1 - Date Range\n%s\n%s\n\nChoice: ' % 
+            prompt = ('Create Report\n\n1 - Date Range\n%s\n%s\nChoice: ' % 
                       (meta_actions, self.status))
             clear_screen()
             try:
-                choice = _handle_input(prompt)
+                choice = self._handle_input(prompt)
                 if choice == '1':
                     self._create_report_by_date()
                     break
+                # TODO add Excel report using pyExcelerator
+                # TODO account report for dates
                 else:
                     self.status = 'Invalid choice'
             except (CancelException, DoneException):
@@ -2429,53 +1252,53 @@ class Budse(object):
             delimiter = '\t'
         with open(output_file, 'w') as report_file:
             report_file.write('Account Name%sDeposits%sWithdrawals%sNet%s%s'
-                              'Report for %s - %s\n' % (delimiter, delimiter,
-                                             delimiter, delimiter, delimiter,
-                                             (begin_date.strftime(output_date)),
-                                             (end_date.strftime(output_date))))
-            root_transaction_groups = self.search(limit=None,
-                                                  begin_date=begin_date,
-                                                  end_date=end_date,
-                                                  most_recent=False,
-                                                  interactive=False)
-            account_summary = {}
+                              'Report for %s - %s\n' %
+                              (delimiter, delimiter, delimiter, delimiter,
+                               delimiter, (begin_date.strftime(output_date)),
+                               (end_date.strftime(output_date))))
+            parent_transactions = self.session.query(Transaction).\
+                filter(Transaction.date >= begin_date).\
+                filter(Transaction.date <= end_date).\
+                order_by(Transaction.date).all()
+            # dict of (account name, deposits, withdrawals, net change) tuples
+            account_summary = {} 
             for account in self.user.accounts:
-                account_summary[account.id] = (account, 0.00, 0.00, 0.00)
+                account_summary[account.id] = (account.name, 0.00, 0.00, 0.00)
             deductions = 0.00
             transaction_log = ('Transaction Log\n\nDate%sAction%sAmount%s'
-                               'Account%sDescription\n' % (delimiter, 
-                                delimiter, delimiter, delimiter))
-            for root_transaction, transactions in root_transaction_groups:
-                transactions.insert(0, root_transaction)
+                               'Account%sDescription\n' %
+                               (delimiter, delimiter, delimiter, delimiter))
+            for parent_transaction in parent_transactions:
+                transactions = parent_transaction.children
+                transactions.insert(0, parent_transaction)
                 for transaction in transactions:
                     action = transaction.action
                     if transaction.account is not None:
-                        account, deposits, withdrawals, net = \
+                        account_name, deposits, withdrawals, net = \
                                  account_summary[transaction.account.id]
-                        if action == transaction_table['deposit']:
+                        if transaction.action == Transaction.DEPOSIT:
                             deposits += transaction.amount
                             net += transaction.amount
-                            output_action = 'Deposit'
-                        elif action == transaction_table['withdrawal']:
+                            action = 'Deposit'
+                        elif transaction.action == Transaction.WITHDRAWAL:
                             withdrawals += transaction.amount
                             net -= transaction.amount
-                            output_action = 'Withdrawal'
+                            action = 'Withdrawal'
                         account_summary[transaction.account.id] = \
-                                     (account, deposits, withdrawals, net)
-                        account_name = transaction.account.name
-                    elif action == transaction_table['deduction']:
+                                     (account_name, deposits, withdrawals, net)
+                    elif transaction.action == Transaction.DEDUCTION:
                         deductions += transaction.amount
-                        output_action = 'Deduction'
+                        action = 'Deduction'
                         account_name = 'N/A'
-                    elif action == transaction_table['transfer']:
+                    elif transaction.action == Transaction.TRANSFER:
                         account_name = 'N/A'
-                        output_action = 'Transfer'
+                        action = 'Transfer'
                     else:
-                        output_action = 'Informational'
+                        action = 'Informational'
                         account_name = 'Whole Account'
                     transaction_log += ('%s%s%s%s%0.2f%s%s%s%s\n' % 
                                         (transaction.date.strftime(output_date),
-                                         delimiter, output_action, delimiter,
+                                         delimiter, action, delimiter,
                                          transaction.amount, delimiter,
                                          account_name, delimiter,
                                          transaction.description))
@@ -2483,41 +1306,44 @@ class Budse(object):
             for k, v in account_summary.iteritems():
                 account, deposits, withdrawals, net = v
                 report_file.write('%s%s%0.2f%s%0.2f%s%0.2f\n' %
-                                  (account.name, delimiter, deposits, delimiter,
+                                  (account, delimiter, deposits, delimiter,
                                    withdrawals, delimiter, net))
                 total_deposits += deposits
                 total_withdrawals += withdrawals
                 total_net += net
             report_file.write('\n\nTotal Deposits:%s%0.2f\nTotal Withdrawals:%s'
                               '%0.2f\nTotal Deductions:%s%0.2f\n\nNet for '
-                              'period:%s%0.2f\n' % (delimiter, total_deposits,
-                                                    delimiter,
-                                                    total_withdrawals,
-                                                    delimiter, deductions,
-                                                    delimiter, total_net))
+                              'period:%s%0.2f\n' %
+                              (delimiter, total_deposits, delimiter,
+                               total_withdrawals, delimiter, deductions,
+                               delimiter, total_net))
             report_file.write('\n\n%s' % transaction_log)
         self.status = '%s successfully created' % output_file
 
     def _ask_filepath(self, filename, prompt, default_path=os.getcwd()):
-        """Prompt user for a location to output a file.
+        """Prompt user for a filename.
 
         Keyword arguments:
-        filename -- Name of the file to output to
+        filename -- Name of the file to default to
         prompt -- How to confirm the choices to the user
         default_path -- Default directory to use to output the file to
         
         """
         filepath = None
-        if _confirm(prompt=prompt, default=True):
+        if self._confirm(prompt, True):
             filepath = '%s/%s' % (default_path, filename)
         else:
             while filepath is None:
-                temporary_path = _ask_string('Directory to output %s to? ' %
-                                             filename)
-                if os.path.exists(temporary_path):
-                    filepath = '%s/%s' % (temporary_path, filename)
+                path, name = os.path.split(self._ask_string('Full filename? '))
+                if os.path.exists(path):
+                    if os.path.exists(os.path.join(path, name)):
+                        if self._confirm(('Overwrite existing file %s' %
+                                          os.path.join(path, name)), False):
+                            filepath = os.path.join(path, name)
+                    else:
+                        filepath = os.path.join(path, name)
                 else:
-                    print 'Invalid path'
+                    print('Invalid path')
         return filepath
 
     def modify_user_settings(self):
@@ -2531,380 +1357,789 @@ class Budse(object):
                 status_modification = 'Deactivate User'
             else:
                 status_modification = 'Activate User'
-            prompt = ('User Preferences Menu\n\n'
-                      '1 - Modify Existing Subaccounts\n'
-                      '2 - Add New Subaccount\n3 - Login Name\n4 - %s\n'
+            prompt = (('User Preferences Menu\n\n'
+                      '1 - Modify Existing Accounts\n'
+                      '2 - Add New Account\n3 - Login Name\n4 - %s\n'
                       '5 - Deductions\n6 - Whole Account Actions\n'
-#                      '7 - Gross\n'
-                      '%s\n%s\n\nAction: ') % (status_modification,
-                                               meta_actions, self.status)
+                      '%s\n%s\n\nAction: ') %
+                      (status_modification, meta_actions, self.status))
             clear_screen()
             try:
-                action = _handle_input(prompt)
+                action = self._handle_input(prompt)
                 if action == '1':
-                    self.modify_subaccount()
+                    self.modify_account()
                 elif action == '2':
-                    self.add_subaccount()
+                    self.create_account(self.user)
                 elif action == '3':
-                    self.status = self.user.modify_name()
+                    self.modify_user_name(self.user)
                 elif action == '4':
-                    self.status = self.user.modify_status()
+                    self.modify_user_status(self.user)
                 elif action == '5':
-                    self.status = self.user.modify_deductions()
+                    self.modify_user_deductions(self.user)
                 elif action == '6':
-                    self.status = self.user.modify_whole()
-#                elif action == '7':
-#                    self._modify_user_gross()
+                    self.modify_user_whole(self.user)
                 else:
                     self.status = 'Invalid action'
-                self.user.save()
-            except (CancelException, DoneException):
+                self.session.commit()
+            except CancelException:
+                self._clear_status()
+                self.status = 'Canceled modifying preferences'
                 break
-
-#     def _modify_user_gross(self):
-#         """Allow the user to turn off prompts dealing with gross/net.
-#         """
-#         existing_gross = self.user.gross
-#         gross = None
-#         if self.user.gross:
-#             if _confirm(prompt='Deactivate prompts to affect gross?', 
-#                              default=True):
-#                 gross = False
-#                 modify_status = 'Deactivated prompts for affecting gross'
-#         else:
-#             if _confirm(prompt='Activate prompts to affect gross?', 
-#                              default=True):
-#                 gross = True
-#                 modify_status = 'Activated prompts for affecting gross'
-#         if status is None:
-#             modify_status = ('Keeping user\'s existing setting for affecting '
-#                              'the gross amount')
-#             status = active
-#         return gross, modify_status
+            except DoneException:
+                self._clear_status()
+                self.status = 'Done modifying preferences'
+                break
         
-    def modify_subaccount(self):
-        """Allow the user to modify aspects of an existing subaccount.
-        """
-        prompt = 'Modify which subaccount: '
+    def modify_user_name(self, user):
+        """Change the name that is used to login to the account."""
+        current_name = user.name
+        if current_name is not None:
+            print('Current login name: %s' % current_name)
+            name_modified = False
+            try:
+                while 1:   # Loop for a non-null name
+                    try:
+                        user.name = self._handle_input('New login name: ')
+                    except TypeError as e:
+                        print(e)
+                    else:
+                        break
+                if self._confirm('Change login name to %s?' % user.name, True):
+                    self.session.commit()
+                    self.status = ('Changed login name from %s to %s' %
+                                   (current_name, user.name))
+                else:
+                    self.session.rollback()
+            except (CancelException, DoneException):
+                pass
+            if not name_modified:
+                self.status = 'Kept existing login name'
+        else:
+            while user.name is None:
+                try:
+                    while 1:    # Loop for a non-null name
+                        try:
+                            user.name = self._ask_string('Login name '
+                                                         '(required): ')
+                        except TypeError as e:
+                            print(e)
+                        else:
+                            break
+                    if self._confirm(prompt="Use '%s' as the login?" %
+                                     user.name, default=True):
+                        self.session.commit()
+                    else:
+                        user.name = None
+                except (CancelException, DoneException):
+                    pass
+
+    def modify_user_status(self, user):
+        """Prompt to flip the status of an existing account."""
+        status_modified = False
+        if user.status:
+            if self._confirm(prompt="Deactivate your account '%s'?" %
+                             user.name, default=False):
+                user.status = False
+                status_modified = True
+                self.status = 'Deactivated account'
+        else:
+            if self._confirm("Activate account '%s'?" % user.name, True):
+                user.status = True
+                status_modified = True
+                self.status = 'Activated account'
+        if not status_modified:
+            self.status = 'Kept existing account status'
+
+    def modify_user_deductions(self, user):
+        """Modify the user's list of saved deductions."""
+        deductions_changed = False
+        deductions = user.deductions
+        status = ''
+        while 1:
+            clear_screen()
+            deduction_list = ''
+            for key, (amount, description) in zip(range(len(deductions)),
+                                                  deductions):
+                deduction_list += ('%d - $%0.2f (%s)\n' %
+                                   (key+1, amount, description))
+            else:
+                prompt = ("Deductions (changes saved when user enters D'one):"
+                          "\n\n%sn - New Deduction\n%s\n%s\n\nModify: " %
+                          (deduction_list, meta_actions, status))
+            status = ''
+            try:
+                choice = self._handle_input(prompt)
+            except DoneException:
+                if deductions_changed:
+                    deductions_changed = True
+                    user.deductions = deductions
+                    self.session.commit()
+                else:
+                    deductions_changed = False
+                break
+            except CancelException:
+                deductions_changed = False
+                self.session.rollback()
+                break
+            try:
+                if choice.upper() == 'N':
+                    amount = self._ask_amount()
+                    description = self._ask_string()
+                    if self._confirm('Add deduction: $%0.2f (%s)?' %
+                                (amount, description), True):
+                        deductions.append((amount, description))
+                        status = 'Deduction added'
+                        deductions_changed = True
+                elif int(choice)-1 >= 0 and int(choice)-1 <= len(deductions):
+                    amount, description = deductions[int(choice)-1]
+                    prompt = ('1 - Change Amount ($%0.2f)\n'
+                              '2 - Change Description (%s)\n'
+                              '3 - Delete\n\nChoice: ' % 
+                              (amount, description))
+                    try:
+                        option = self._handle_input(prompt, int)
+                    except DoneException:
+                        continue
+                    status = 'Deduction unchanged'
+                    if option == 1:
+                        new_amount = self._ask_amount()
+                        if self._confirm('Change amount from $%0.2f to $%0.2f?'
+                                         % (amount, new_amount), True):
+                            deductions[int(choice)-1] = (new_amount,
+                                                         description)
+                            status = 'Deduction amount changed'
+                            deductions_changed = True
+                    elif option == 2:
+                        new_description = self._ask_string()
+                        if self._confirm('Change description from "%s" to '
+                                         '"%s"?' %
+                                         (description, new_description), True):
+                            deductions[int(choice)-1] = (amount,
+                                                         new_description)
+                            status = 'Deduction description changed'
+                            deductions_changed = True
+                    elif option == '3' and self._confirm('Are you sure that '
+                           'you want to delete this deduction:\n%s - %s\n' %
+                           (amount, description)):
+                        deductions.pop[int(choice)-1]
+                        status = 'Deduction deleted'
+                        deductions_changed = True
+                else:
+                    status = 'Invalid Choice'
+            except (CancelException, DoneException):
+                status = 'Canceled action'
+                continue
+        if deductions_changed:
+            self.status = 'Deductions modified'
+        else:
+            self.status = 'Deductions not modified'
+
+    def modify_user_whole(self, user):   # not hole, that would be inappropriate
+        """Change whether user is prompted for whole account actions."""
+        if user.whole_account_actions is not None:
+            whole_modified = False
+            if self.user.whole_account_actions:
+                if self._confirm('Deactivate whole account actions?', False):
+                    self.user.whole_account_actions = False
+                    self.status = 'Deactivated whole account actions'
+                    whole_modified = True
+            else:
+                if self._confirm('Activate whole account actions?', True):
+                    self.user.whole_account_actions = True
+                    self.status = 'Activated whole account actions'
+                    whole_modified = True
+            if not whole_modified:
+                self.status = "Kept user's setting for whole account actions"
+        else:
+            user.whole_account_actions = self._confirm('Activate whole account '
+                                                       'actions?', True)
+
+    def modify_account(self):
+        """Allow the user to modify aspects of an existing account."""
         try:
-            subaccount = (self._ask_subaccount(prompt=prompt,
-                                               active_only=False))
+            account = self._ask_account('Modify which account: ',
+                                        active_only=False)
         except (CancelException, DoneException):
-            print 'Halted modification'
+            self.status = 'Halted account modifications'
             return
         changed = False
         while 1:
             clear_screen()
-            if subaccount.status:
+            if account.status:
                 status_modification = 'Deactivate Account'
             else:
                 status_modification = 'Activate Account'
-            prompt = ('Modify subaccount %s:\n1 - Name\n2 - Description\n' 
+            prompt = ('Modify account %s:\n1 - Name\n2 - Description\n' 
                       '3 - Type\n4 - Amount\n5 - %s\n6 - Gross vs Net\n'
-                      '%s\n%s\n\nAction: ') % (subaccount.name,
-                             status_modification, meta_actions, self.status)
+                      '%s\n%s\n\nAction: ' % (account.name, status_modification,
+                                              meta_actions, self.status))
+                      
             try:
-                action = _handle_input(prompt)
+                action = self._handle_input(prompt)
             except (CancelException, DoneException):
                 break
+            check_reconfiguration = False
             try:
                 if action == '1':
-                    self.status = subaccount.modify_name()
+                    self.modify_account_name(account)
                 elif action == '2':
-                    self.status = subaccount.modify_description()
+                    self.modify_account_description(account)
                 elif action == '3':
-                    existing_type = subaccount.type
-                    self.status = subaccount.modify_type()
-                    if subaccount.type != existing_type:
-                        existing_amount = subaccount.amount
-                        try:
-                            self.status += ', ' + (subaccount.modify_amount(
-                                loop=True, type_change=True))
-                        except (CancelException, DoneException):
-                            pass
-                        finally:
-                            self.user.accounts, status = \
-                                 self.user._reconfigure_subaccounts()
+                    self.modify_account_type(account)
+                    check_reconfiguration = True
                 elif action == '4':
-                    existing_amount = subaccount.amount
-                    self.status = subaccount.modify_amount()
-                    if existing_amount != subaccount.amount:
-                        self.user.accounts, status = \
-                                 self.user._reconfigure_subaccounts()
+                    self.modify_account_amount(account)
+                    check_reconfiguration = True
                 elif action == '5':
-                    existing_status = subaccount.status
-                    self.status = subaccount.modify_status()
-                    if existing_status != subaccount.status:
-                        self.user.accounts, status = \
-                                 self.user._reconfigure_subaccounts()
+                    self.modify_account_status(account)
+                    check_reconfiguration = True
                 elif action == '6':
-                    self.status = subaccount.modify_gross()
-                    self.user.accounts, status = \
-                                 self.user._reconfigure_subaccounts()
+                    self.modify_account_gross(account)
+                    check_reconfiguration = True
                 else:
                     self.status = 'Invalid action'
-                subaccount.save()
+                self.session.commit()
+                if check_reconfiguration and self.user.whole_account_actions:
+                    if self.reconfigure_accounts(self.user.accounts):
+                        self.status = "Reconfigured all of the user's accounts"
             except (CancelException, DoneException):
                 self.status = 'Canceled action'
                 continue
         
-    def add_subaccount(self):
-        """Add a new subaccount to the user's accounts.
+    def modify_account_name(self, account):
+        """Change the name for a particular account."""
+        name_modified = False
+        if account.name is not None:
+            current_name = account.name
+            print('Existing name: %s' % current_name)
+            while 1:    # Loop for a non-null name
+                try:
+                    account.name = self._handle_input('New name: ')
+                except TypeError as e:
+                    print(e)
+                else:
+                    break
+            if account.name.lstrip() != '':
+                if self._confirm("Change name from '%s' to '%s'?" %
+                                 (current_name, account.name), True):
+                    name_modified = True
+                    self.session.commit()
+                    self.status = ("Name changed from '%s' to '%s'" %
+                                   (current_name, account.name))
+        else:
+            while 1:
+                try:
+                    account.name = self._ask_string('Name for the account: ')
+                except TypeError as e:
+                    print(e)
+                else:
+                    break
+            self.status = "Account name is now '%s'" % account.name
+            name_modified = True
+        if not name_modified:
+            self.status = 'Kept existing account name'
 
-        Need to reconfigure the amounts of the other accounts if this is
-        an account that affects the net and is a percentage amount.
-        
-        """
+    def modify_account_description(self, account):
+        """Get a new description for a particular account."""
+        description_modified = False
         try:
-            subaccount = _create_account(self.user)
-            subaccounts, self.status = \
-                  self.user._reconfigure_subaccounts(new_subaccount=subaccount)
-            prompt = 'New Account:\n\n%s\nAdd this account?' % subaccount
-            if _confirm(prompt=prompt, default=True):
-                subaccount.save()
-                self.user.accounts = subaccounts
-                self.status = ('New account %s added successfully' %
-                               subaccount.name)
-                all_accounts.append(subaccount)
+            if account.description is not None:
+                existing_description = account.description
+                print('Existing description: %s' % existing_description)
+                account.description = self._ask_string('New description? ')
+                prompt = ("Change description from '%s' to '%s'?" % 
+                          (existing_description, account.description))
+                if self._confirm(prompt, True):
+                    description_modified = True
+                    self.status = 'Description changed'
             else:
-                subaccount.discard()
-                self.status = 'Did not add account %s' % subaccount.name
+                prompt = "Description of account '%s': " % account.name
+                account.description = self._ask_string(prompt)
+                description_modified = True
+                self.status = "Added description for '%s'" % account.name
         except (CancelException, DoneException):
-            self.status = 'Canceled subaccount addition'
+            pass
+        if not description_modified:
+            self.status = 'Kept existing description'
 
-    def _ask_subaccount(self, prompt='Perform transaction using ' +
-                        'which subaccount: ', active_only=True):
-        """Query user for a specific subaccount to use for transaction
+    def modify_account_type(self, account):
+        """Change the type of the account, used for whole account actions."""
+        type_modified = False
+        if account.percentage_or_fixed is not None:
+            if account.percentage_or_fixed == Account.PERCENTAGE:
+                if self._confirm('Change to fixed amount?', True):
+                    account.percentage_or_fixed = Account.FIXED
+                    self.status = "'%s' is now a fixed account" % account.name
+                    type_modified = True
+            else:
+                if self._confirm('Change to percentage amount?', True):
+                    account.percentage_or_fixed = Account.PERCENTAGE
+                    self.status = ("'%s' is now a percentage account" %
+                                   account.name)
+                    type_modified = True
+        else:
+            status = ''
+            while account.percentage_or_fixed is None:
+                prompt = ("Account Type:\nP'ercentage\nF'ixed\n%s\nChoice: " %
+                          status)
+                status = ''
+                choice = self._handle_input(prompt).upper()
+                if choice.startswith('P'):
+                    account.percentage_or_fixed = Account.PERCENTAGE
+                    type_modified = True
+                    self.status = ("'%s' is now a percentage account" %
+                                   account.name)
+                elif choice.startswith('F'):
+                    account.percentage_or_fixed = Account.FIXED
+                    type_modified = True
+                    self.status = "'%s' is now a fixed account" % account.name
+                else:
+                    status = 'Invalid choice'
+        if not type_modified:
+            self.status = 'Kept existing type'
+        else:
+            self.modify_account_amount(account, force_change=True)
+
+    def modify_account_amount(self, account, force_change=False):
+        """Change the amount for this account, whether percentage or fixed.
+
+        Keyword arguments:
+        force_change -- Whether user has to change the amount
+            (e.g., because the account type changed) (default False)
+
+        """
+        amount_modified = False
+        if account.percentage_or_fixed == Account.PERCENTAGE:
+            display_amount = '%0.2f%%' % float(account.amount * 100)
+        else:
+            display_amount = '$%0.2f' % float(account.amount)
+        prompt = 'Existing Amount: %s\n' % display_amount
+        if account.affect_gross:
+            modifies = 'Gross'
+        else:
+            modifies = 'Net'
+        if account.affect_gross is not None:
+            prompt += 'Modifies: %s\n' % modifies
+
+        if account.percentage_or_fixed == Account.PERCENTAGE:
+            prompt += 'Percentage for whole account actions: '
+        else:
+            prompt += 'Fixed amount (dollars) for whole account actions: '
+        while 1:
+            account.amount = self._ask_amount(prompt)
+            if (account.percentage_or_fixed == Account.PERCENTAGE and
+                (0 > (account.amount * 100) or (account.amount * 100) > 100)):
+                print('Out of range! (Must be in the range 0-100)')
+                continue
+            if account.percentage_or_fixed == Account.PERCENTAGE:
+                display_amount = '%0.2f%%' % (account.amount * 100)
+            else:
+                display_amount = '$%0.2f' % account.amount
+            if self._confirm('Use %s for the amount?' % display_amount, True):
+                amount_modified = True
+                break
+            if not force_change:
+                break
+        if not amount_modified:
+            self.session.rollback()
+            self.status = "Kept existing amount for '%s'" % account.name
+        else:
+            self.status = "Modified amount for '%s'" % account.name
+
+    def modify_account_status(self, account):
+        """Prompt to flip the status of an existing account."""
+        status_modified = False
+        if account.status:
+            if self._confirm("Deactivate account '%s'?" % account.name, False):
+                account.status = False
+                status_modified = True
+                self.status = 'Deactivated account'
+        else:
+            if self._confirm("Activate account '%s'?" % account.name, True):
+                account.status = True
+                status_modified = True
+                self.status = 'Activated account'
+        if not status_modified:
+            self.status = 'Kept existing account status'
+
+    def modify_account_gross(self, account):
+        """Modify whether this account affects the gross amount."""
+        gross_modified = False
+        if account.affect_gross is not None:
+            if not account.affect_gross:
+                if self._confirm(prompt='Affect the gross on whole account '
+                                 'actions?', default=True):
+                    account.affect_gross = True
+                    gross_modified = True
+                    self.status = "'%s' now affects the gross" % account.name
+            else:
+                if self._confirm(prompt='Affect the net on whole account '
+                                 'actions?', default=True):
+                    account.affect_gross = False
+                    gross_modified = True
+                    self.status = "'%s' now affects the net" % account.name
+        else:
+            status = ''
+            while account.affect_gross is None:
+                prompt = ("For whole account actions, affect:\nG'ross\n"
+                          "N'et\n%s\nChoice: " % status)
+                status = ''
+                choice = self._handle_input(prompt).upper()
+                if choice.startswith('G'):
+                    account.affect_gross = True
+                    gross_modified = True
+                    self.status = "'%s' now affects the gross" % account.name
+                elif choice.startswith('N'):
+                    account.affect_gross = False
+                    gross_modified = True
+                    self.status = "'%s' now affects the net" % account.name
+                else:
+                    status = 'Invalid choice'
+        if not gross_modified:
+            self.status = 'Kept existing setting for affecting the gross amount'
+
+    def _ask_account(self, prompt='Perform transaction using which account: ',
+                     active_only=True, exclude_accounts=[]):
+        """Query user for a specific account to use for transaction
 
         Keyword arguments:
         prompt -- What to ask the user
         active_only -- Only show the active accounts (default True)
+        exclude_accounts -- Account objects to exclude from the prompt
 
         Returns:
         Account object
 
         """
         if active_only:
-            all_accounts = self.user.filter_accounts(gross=None)
+            accounts = self.session.query(Account).\
+                       filter(Account.user == self.user).\
+                       filter(Account.status == True).all()
         else:
-            all_accounts = self.user.accounts
-        accounts = {}
+            accounts = self.session.query(Account).\
+                       filter(Account.user == self.user).all()
         clear_screen()
-        print '\nSubaccounts: '
-        counter = 0
-        for account in all_accounts:
-            counter += 1
-            print '%d - %s (%s)' % (counter, account.name, 
-                                      account.description)
-            accounts[counter] = account
-        subaccount = None
-        while subaccount is None:
+        print '\nAccounts: '
+        for index, account in zip(range(len(accounts)), accounts):
+            print('%d - %s (%s)' %
+                  (index+1, account.name, account.description))
+        account = None
+        while account is None:
             try:
-                id = _handle_input('\n%s' % prompt, int)
-                if accounts.has_key(id):
-                    subaccount = accounts[id]
+                # Pretty indexes
+                index = self._handle_input('\n%s' % prompt, int) - 1 
+                if index >= 0 and index < len(accounts):
+                    account = accounts[index]
                 else:
-                    print 'Invalid choice'
+                    print('Invalid choice')
             except ConversionException:
-                print 'Invalid input'
-        return subaccount
+                print('Invalid choice')
+        return account
 
-    def _transact_for_whole_account(self, is_deposit=True, default=False):
+    def _transact_for_whole_account(self, default=False):
         """Query user to make transaction for whole account (using settings)
 
         Keyword arguments:
-        is_deposit -- This is for a deposit (default True)
         default -- The default answer (default False)
 
         Returns:
         True to transact for whole account, False otherwise
 
         """
-        if is_deposit:
-            action = 'Deposit into'
-        else:
-            action = 'Withdraw from'
-        prompt = '%s the whole account?' % action
         if self.user.whole_account_actions:
-            return _confirm(prompt=prompt, default=default)
-        # User does not want to be prompted for whole account actions
+            return self._confirm('Deposit into the whole account?', default)
+        else: # User does not want to ever be prompted for whole account actions
+            return False
+
+    def reconfigure_accounts(self, accounts, active_only=True):
+        """Modify amounts for accounts to maintain requirements.
+
+        Keyword arguments:
+        accounts -- List of Account objects to reconfigure
+    
+        Returns:
+        accounts_modified -- True if accounts modified, else False
+        
+        """
+        gross_reconfig, net_reconfig = \
+            _require_reconfiguration(accounts, active_only=active_only)
+        if not gross_reconfig and not net_reconfig:
+            return False
+        gross_percentage = filter_accounts(accounts, gross=True, fixed=False,
+                                           active_only=active_only)
+        net_percentage = filter_accounts(accounts, gross=False, fixed=False,
+                                         active_only=active_only)
+        gross_modified = net_modified = False
+        status = ''
+        while gross_reconfig:
+            prompt = ('Reconfigure Account Amounts\n\nModify the gross '
+                      'percentage accounts to less than 100%\n')
+            total = 0.00
+            for index, account in zip(range(len(gross_percentage)),
+                                      gross_percentage):
+                amount = account.amount * 100
+                prompt += ('%d - %s (%0.2f%%)\n' %
+                           ((index+1), account.name, amount))
+                total += amount
+            prompt += 'Total: %0.2f\n%s\nModify: ' % (total, status)
+            status = ''
+            try:
+                choice = self._handle_input(prompt, int) - 1 # Pretty index
+                if choice >= 0 and choice < len(gross_percentage):
+                    amount = self._ask_amount()
+                    if self._confirm(("Use %0.2f for '%sn'" %
+                                      (amount, gross_percentage[choice].name)),
+                                     default=True):
+                        gross_percentage[choice].amount = amount
+                        gross_modified = True
+                        status = ("'%s' modified" %
+                                  (gross_percentage[choice].name))
+                else:
+                    status = 'Invalid choice'
+            except (CancelException, DoneException):
+                status = 'Canceled change, continue to reconfigure'
+            gross_reconfig, trash = _require_reconfiguration(gross_percentage,
+                                      check_net=False, active_only=active_only)
+        while net_reconfig:
+            if len(net_percentage) == 0:
+                print('You need at least one net percentage account if you '
+                      'want to do whole account actions')
+                if self._confirm('Keep whole account actions enabled', True):
+                    print('Create net accounts to take 100% of your net')
+                    account_count = 1
+                    done = False
+                    while not done:
+                        print('Account %d:\n' % account_count)
+                        account = self.create_account(self.user,
+                                                      affect_gross=False,
+                                                      percentage_or_fixed=\
+                                                          Account.PERCENTAGE)
+                        if account is not None:
+                            account_count += 1
+                            net_percentage.append(account)
+                        done = self._confirm('Done creating net accounts?')
+                        clear_screen()
+                else:
+                    self.user.whole_account_actions = False
+                    self.session.commit()
+                    return True
+                self.session.add_all(net_percentage)
+                self.session.commit()
+                self._clear_status()
+            else:
+                prompt = ('Reconfigure Account Amounts\n\nModify the '
+                          'net percentage accounts to exactly 100%\n')
+                total = 0.00
+                for index, account in zip(range(len(net_percentage)),
+                                          net_percentage):
+                    amount = account.amount * 100
+                    prompt += ('%d - %s (%0.2f%%)\n' %
+                               ((index+1), account.name, amount))
+                    total += amount
+                prompt += 'Total: %0.2f\n%s\nModify: ' % (total, status)
+                status = ''
+                try:
+                    choice = self._handle_input(prompt, int) - 1 # Pretty index
+                    if choice >= 0 and choice < len(net_percentage):
+                        amount = self._ask_amount()
+                        if self._confirm(("Use %0.2f for '%s'" %
+                                          (amount,
+                                           net_percentage[choice].name)),
+                                         default=True):
+                            net_modified = True
+                            net_percentage[choice].amount = amount
+                            status = ("'%s' modified" %
+                                      (net_percentage[choice].name))
+                    else:
+                        status = 'Invalid choice'
+                except (CancelException, DoneException):
+                    status = 'Canceled change, continue to reconfigure'
+            trash, net_reconfig = _require_reconfiguration(net_percentage,
+                                     check_gross=False, active_only=active_only)
+        if gross_modified or net_modified:
+            self.session.commit()
+            return True
         else:
             return False
 
-    def _ask_date(self, default_date=datetime.date.today(), 
-                  prompt='Date of transaction'):
-        """Query user for a date.
-        
-        Keyword parameters:
-        default_date -- Date to use (default today)
-        prompt_for -- What date describes (default transaction)
+    def create_account(self, user, affect_gross=None, percentage_or_fixed=None):
+        """Create a new account based on user's input.
+
+        Keyword Parameter:
+        user -- User object to which the account will belong to
+        affect_gross -- Default for whether to modify the gross or net
+            (default None will prompt user)
+        percentage_or_fixed -- Default for account type (default None will
+            prompt user)
 
         Returns:
-        datetime.date object of desired date
+        Account object if confirmed, otherwise None
+        
+        """
+        account = Account(user)
+        try:
+            self.modify_account_name(account)
+            self.modify_account_description(account)
+            if affect_gross is not None:
+                account.affect_gross = affect_gross
+            if percentage_or_fixed is not None:
+                account.percentage_or_fixed = percentage_or_fixed
+                self.modify_account_amount(account)
+            else:
+                self.modify_account_type(account)
+            if affect_gross is None:
+                if account.percentage_or_fixed == Account.PERCENTAGE:
+                    self.modify_account_gross(account)
+                else:
+                    account.affect_gross = False   # Deprecate fixed & gross
+        except (CancelException, DoneException):
+            self.session.rollback()
+            assert account not in self.session
+            return None
+        account_repr = '%s' % account
+        if not self._confirm('%s\nCreate account? ' %
+                             (account_repr.replace(str_delimiter,'\n')).\
+                             replace(tag_delimiter, ':'), True):
+            self.session.rollback()
+            assert account not in self.session
+            return None
+        return account
+
+    def _create_user(self, newbie=False):
+        """Create a new user account.
+
+        Returns:
+        User object that was created or None if not created
+    
+        """
+        clear_screen()
+        if newbie:
+            clear_screen()
+            print('Welcome to Budse, create your very first user login.  \n'
+                  'This name is how you will login forever (so choose a good '
+                  'one!)\n')
+            raw_input(continue_string)
+        while 1:
+            name = self._ask_string('Login Name: ')
+            try:
+                self.session.query(User).filter(User.name == name).one()
+            except NoResultFound:
+                try:
+                    new_user = User(name)
+                except TypeError as e:
+                    print(e)
+                else:
+                    self.session.add(new_user)
+                    break
+            else:
+                print("Username '%s' is already used, choose again" % name)
+            clear_screen()
+        if newbie:
+            clear_screen()
+            print('Deductions are subtracted from whole account deposits \n'
+                  'after the gross deposit, before the net deposit \n'
+                  '(e.g., pay $50 to social security)\n')
+            raw_input(continue_string)
+        new_user.deductions = self.ask_deduction_list()
+        clear_screen()
+        if newbie:
+            clear_screen()
+            print('Whole account actions allow you to filter your \nentire '
+                  'transaction with your account setting \n(e.g., '
+                  '$10 of net for your spam, $15 of net for your eggs,\n'
+                  '40% of net for savings, 10% of gross for tithe, etc)\n\n'
+                  'The order of operations for a whole account action is:\n\n'
+                  '1) Gross percentage accounts\n'
+                  '2) Deductions\n'
+                  '3) Gross and net fixed accounts\n'
+                  '4) Net percentage accounts\n')
+            raw_input(continue_string)
+        new_user.whole_account_actions = \
+            self._confirm('Activate whole account actions?', True)
+        if newbie:
+            clear_screen()
+            print('Accounts each represent a portion of your entire worth.\n'
+                  'Each of them has the following attributes:\n\n'
+                  'Name - What to call the account\n'
+                  'Description - How to describe the account\n'
+                  'Gross - Affect the gross (pre-deduction) or net'
+                  ' (post-deduction).\n    The default is net.\n'
+                  'Type - A percentage or fixed amount\n'
+                  'Amount - The percentage or fixed amount (used to \n    '
+                  'calculate how to split whole account transactions)\n')
+            raw_input(continue_string)
+        accounts = []
+        done = False
+        clear_screen()
+        print('Need to create some accounts.\n')
+        while not done:
+            print('Account %d:\n' % (len(accounts) + 1))
+            try:
+                accounts.append(self.create_account(new_user))
+            except CancelException:
+                pass
+            finally:
+                done = self._confirm("Done creating accounts for user '%s'?" %
+                                     new_user.name)
+            clear_screen()
+        clear_screen()
+        self.reconfigure_accounts(accounts, active_only=False)
+        if self._confirm(('%s\nCreate user %s?' %
+                          ((str(new_user)).replace(str_delimiter, '\n').\
+                           replace(tag_delimiter, ':'),
+                           new_user.name)), default=True):
+            self.session.add_all([new_user] + accounts)
+            self._clear_status()
+            self.session.commit()
+        else:
+            self.session.rollback()
+            new_user = None
+        return new_user
+
+    def opening_prompt(self):
+        """Receive the username that is to be used for the application.
+
+        Check the input of the username in a case-insensitive manner by
+        converting all strings to be compared into uppercase.  Maintain a
+        dictionary with this uppercase string as the key and the User
+        object as the value.
+
+        Returns:
+        Valid User object
 
         """
-        date = None
-        output_format = '%Y-%m-%d'
-        prompt = ('%s? (YYYY-MM-DD, default %s) ' % 
-                  (prompt, default_date.strftime(output_format)))
-        while 1:
-            temp_input = _handle_input(prompt)
-            if temp_input == '':
-                date = default_date
-            else:
-                try:
-                    date = datetime.date(int(temp_input[0:4]), 
-                                         int(temp_input[5:7]), 
-                                         int(temp_input[8:10]))
-                except ValueError:
-                    print 'Invalid date'
-            if date is not None:
-                break
-        return date
-
-def _create_account(user):
-    """Create a new account with all of its properties.
-    """
-    # if possible, move this to Account.__init__
-    subaccount = Account(user=user)
-    subaccount.modify_name()
-    subaccount.modify_description()
-    subaccount.modify_gross()
-    subaccount.modify_type()
-    subaccount.modify_amount(loop=True)
-    return subaccount
-
-def _create_user(newbie=False):
-    """Create a new user account.
-
-    Returns:
-    User object that was created or None if not created
-    
-    """
-    new_user = User()
-    clear_screen()
-    if newbie:
-        clear_screen()
-        print ('Welcome to Budse, create your very first user login.  \nThis '
-               'name is how you will login forever (so choose a good one!)\n')
-        raw_input(continue_string)
-    need_name_input = True
-    while need_name_input:
-        name = _ask_string(prompt='Login Name: ')
-        need_name_input = False
-        for user in all_users:
-            if user.name == name:
-                need_name_input = True
-        clear_screen()
-        if need_name_input:
-           print 'Login already used, try again' 
-    new_user.name = name
-    if newbie:
-        clear_screen()
-        print ('Deductions are subtracted from whole account deposits \nafter '
-               'the gross deposit, before the net deposit \n(e.g., pay $50 '
-               'to social security)\n')
-        raw_input(continue_string)
-    new_user.deductions = new_user.ask_deduction_list()
-    clear_screen()
-    if newbie:
-        clear_screen()
-        print ('Whole account actions allow you to filter your \nentire '
-               'transaction with your account setting \n(e.g., '
-               '$10 of net for your spam, $15 of net for your eggs,\n'
-               '40% of net for savings, 10% of gross for tithe, etc!)\n')
-        raw_input(continue_string)
-    new_user.modify_whole()
-    if newbie:
-        clear_screen()
-        print ('Accounts each represent a portion of your entire worth.\n'
-               'Each of them has the following attributes:\n\n'
-               'Name - What to call the account\n'
-               'Description - How to describe the account\n'
-               'Gross - Affect the gross (pre-deduction) or net'
-               ' (post-deduction) \n    (e.g., tithe 10% of gross instead of'
-               ' 10% of net).  If in doubt choose net.\n'
-               'Type - A percentage or fixed amount\n'
-               'Amount - The percentage or fixed amount (used to \n    '
-               'calculate how to split whole account transactions)\n')
-        raw_input(continue_string)
-    accounts = []
-    done = False
-    clear_screen()
-    print ('Need to create some accounts.\n')
-    count = 1
-    while not done:
-        print 'Account %d:\n' % count
-        account = None
+        prompt = "Username, N'ew, Q'uit: "
         try:
-            account = _create_account(new_user)
-        except (CancelException, DoneException):
-            pass
-        else:
-            clear_screen()
-            if _confirm(prompt='%s\nUse account?' % account, default=True):
-                accounts.append(account)
-                count += 1
-        finally:
-            if debug and account is not None: print '==\n%s\n==' % account
-            done = _confirm('Done creating all of your accounts?')
-            clear_screen()
-    new_user.accounts = accounts
-    new_user.accounts, status = new_user._reconfigure_subaccounts()
-    clear_screen()
-    if _confirm(('%s\nCreate user %s?' % (new_user, new_user.name)), default=True):
-        new_user.save()
-        all_users.append(new_user)
-        for account in new_user.accounts:
-            account.user = new_user.id
-            account.save()
-            all_accounts.append(account)
-    else:
-        for account in new_user.accounts:
-            account.discard()
-        new_user.discard()
-        new_user = None
-    return new_user
-
-def opening_prompt(prompt='Username, N\'ew, Q\'uit: '):
-    """Receive the username that is to be used for the application.
-
-    Keyword arguments:
-    prompt -- Printed to the user
-
-    Check the input of the username in a case-insensitive manner by
-    converting all strings to be compared into uppercase.  Maintain a
-    dictionary with this uppercase string as the key and the User
-    object as the value.
-
-    Returns:
-    Valid User object
-
-    """
-    users = dict([(user.name.upper(), user) for user in all_users])
-    user = None
-    if not users:
-        try:
-            user = _create_user(newbie=True)
-        except (CancelException, DoneException):
-            print 'How sad, you\'re done here.'
-    else:
-        while user is None:
-            try:
-                input_user = str(_handle_input(prompt)).upper()
-            except (CancelException, DoneException):
-                # Ignore C'ancel at this prompt
-                input_user = 'C'
-            if input_user == 'N':
+            self.session.query(User).one()
+        except NoResultFound:
+            while self.user is None:
                 try:
-                    user = _create_user()
+                    self.user = self._create_user(newbie=True)
                 except (CancelException, DoneException):
-                    print 'Try logging in again'
-            elif input_user in users:
-                user = users[input_user]
-            else:
-                print 'Invalid user'
-    return user
+                    print("How sad, you're done here.")
+                    self.session.rollback()
+        else:
+            while self.user is None:
+                try:
+                    username = self._ask_string(prompt)
+                # Ignore C'ancel and D'one at this prompt
+                except CancelException:
+                    username = 'C'
+                except DoneException:
+                    username = 'D'
+                try:
+                    self.user = self.session.query(User).\
+                        filter(User.name == username).one()
+                except NoResultFound:
+                    if username == 'N':
+                        try:
+                            self.user = self._create_user()
+                        except (CancelException, DoneException):
+                            print('Try logging in again')
+                    else:
+                        print("User '%s' does not exist" % username)
+        assert self.user is not None
+        return self.user
 
 def _clear_screen():
     """Execute a command to clear the screen for the console application.
@@ -2924,129 +2159,74 @@ def _clear_screen():
     else:
         os_clear = ''
     os.system(os_clear)
-    
-def initialize_database():
-    """Initalize the database tables if they do not exist.
-    """
-    #Errors with CREATE TABLE IF NOT EXISTS
-    connector('CREATE TABLE accounts (account_id INTEGER PRIMARY KEY AUTOINCREMENT,user_id INTEGER,account_name TEXT,status INTEGER,account_total REAL,percentage_or_fixed TEXT,transaction_amount REAL,affect_gross INTEGER,account_description TEXT)')
-    connector('CREATE TABLE users (user_id INTEGER PRIMARY KEY AUTOINCREMENT,user_name TEXT,status INTEGER,last_login TEXT,automatic_deductions TEXT,whole_account_actions INTEGER)')
-    connector('CREATE TABLE transactions (transaction_id INTEGER PRIMARY KEY AUTOINCREMENT,timestamp TEXT,date TEXT,user_id INTEGER,account_id INTEGER,amount REAL,action TEXT,description TEXT,root_transaction_id INTEGER,status INTEGER)')
 
-def user_by_id(id):
-    """Retrieve a User object.
 
-    Keyword arguments:
-    id -- Unique ID of a User object
-
-    Returns:
-    User object
-    
-    """
-    for user in all_users:
-        if user.id == id:
-            return user
-    else:
-        return None
-
-def account_by_id(id):
-    """Retrieve an Account object.
-
-    Keyword arguments:
-    id -- Unique ID of an Account object
-
-    Returns:
-    Account object
-    
-    """
-    for account in all_accounts:
-        if account.id == id:
-            return account
-    else:
-        return None
-
-initialize = False
-if not os.path.exists(database_file):
-    initialize = True
-#TODO 5: program versioning in the database?
-connection = sqlite.connect(database_file)
-connection.row_factory = sqlite.Row
-if initialize:
-    initialize_database()
-all_users = [User(row[user_table['id']]) for
-             row in connector(select([user_table['id']], user_table['table']))]
-all_accounts = [Account(row[account_table['id']]) for
-                row in connector(select([account_table['id']],
-                                        account_table['table']))]
-continue_string = 'Strike any key to continue'
-clear_screen = _clear_screen
-clear_screen()
-main_user = opening_prompt()
-last_login = main_user.timestamp
-now = datetime.datetime.now()
-main_user.timestamp = '%s-%02d-%02d %d:%02d:%02d' % (now.year, now.month, 
-                                   now.day, now.hour, now.minute, now.second)
-
-main_user.save()
-app = Budse(main_user)
-app.status =  ('Welcome to Budse, %s.  Last login: %s' %
-               (main_user.name, last_login))
-# Force the user to reconfigure the accounts, which will be silent as long
-# as everything is configured correctly
-main_user.accounts, trash = main_user._reconfigure_subaccounts()
-clear_screen()
-while 1:
-    prompt = ('Main Menu\n\n1 - Deposit\n2 - Withdraw\n3 - Balance\n'
-              '4 - Transfer\n5 - Search\n6 - Create Report\n'
-              '7 - Undo Transaction\n8 - Preferences\n'
-              '%s\n%s\n\nAction: ') % (meta_actions, app.status)
-    app.status = ''
-    try:
-        action = _handle_input(prompt)
-    except (CancelException, DoneException):
-        app.status = 'Main menu, cannot backup any further'
-        clear_screen()
-        continue
-    if action == '1':
-        clear_screen()
-        app.make_deposit()
-    elif action == '2':
-        clear_screen()
-        app.make_withdrawal()
-    elif action == '3':
-        clear_screen()
-        app.print_balance(include_all=True)
-        raw_input(continue_string)
-    elif action == '4':
-        clear_screen()
-        app.make_transfer()
-    elif action == '5':
-        clear_screen()
-        try:
-            app.output_transactions(app.search())
-            raw_input(continue_string)
-        except (CancelException, DoneException):
-            app.status = 'Canceled search'
-    elif action == '6':
-        clear_screen()
-        app.create_report()
-    elif action == '7':
-        root_id = _handle_input('Root ID of transaction: ', int)
-        query, parameters = select([transaction_table['id']],
-                                   transaction_table['table'],
-                                   [(transaction_table['root_id'], root_id)])
-        try:
-            row = connector(query, parameters).fetchone()
-            root_transaction = row[transaction_table['id']]
-        except TypeError:
-            root_transaction = 0
-        if root_transaction != 0:
-            app.status = 'Transaction %d reversed' % root_id
-            app.reverse_transaction(root_id)
-        else:
-            app.status = 'ID is not a root ID'
-    elif action == '8':
-        app.modify_user_settings()
-    else:
-        app.status = 'Invalid action'
+if __name__ == "__main__":
+    #TODO 5: program versioning in the database?
+    session = Session()
+    Base.metadata.create_all(engine)
+    continue_string = 'Hit return to continue'
+    clear_screen = _clear_screen
     clear_screen()
+    app = BudseCLI(session)
+    app.opening_prompt()
+    last_login = app.user.last_login
+    app.user.login()
+    session.commit()
+    app.status =  ('Welcome to Budse, %s.  Last login: %s' %
+                   (app.user.name, last_login))
+    if app.user.whole_account_actions:
+        # Force the user to reconfigure the accounts if they're out of wack
+        done = False
+        while not done:
+            try:
+                app.reconfigure_accounts(app.user.accounts)
+            except (CancelException, DoneException):
+                continue
+            else:
+                done = True
+    clear_screen()
+    while 1:
+        prompt = ('Main Menu\n\n1 - Deposit\n2 - Withdraw\n3 - Balance\n'
+                  '4 - Transfer\n5 - Search\n6 - Create Report\n'
+                  '7 - Undo Transaction\n8 - Preferences\n'
+                  '%s\n%s\n\nAction: ') % (meta_actions, app.status)
+        try:
+            action = app._handle_input(prompt)
+        except (CancelException, DoneException):
+            app.status = 'Main menu, cannot backup any further'
+            clear_screen()
+            continue
+        if action == '1':
+            clear_screen()
+            app.make_deposit()
+        elif action == '2':
+            clear_screen()
+            app.make_withdrawal()
+        elif action == '3':
+            clear_screen()
+            app.print_balance(include_all=True)
+            raw_input(continue_string)
+        elif action == '4':
+            clear_screen()
+            app.make_transfer()
+        elif action == '5':
+            clear_screen()
+            try:
+                app.output_transactions(app.search())
+                raw_input(continue_string)
+            except (CancelException, DoneException):
+                app.status = 'Canceled search'
+        elif action == '6':
+            clear_screen()
+            app.create_report()
+        elif action == '7':
+            try:
+                app.reverse_transaction()
+            except (CancelException, DoneException):
+                app.status = 'Canceled reversal'
+        elif action == '8':
+            app.modify_user_settings()
+        else:
+            app.status = 'Invalid action'
+        clear_screen()
