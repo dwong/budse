@@ -284,7 +284,7 @@ class Transaction(Base):
     __tablename__ = 'transactions'
 
     id = Column('transaction_id', Integer, primary_key=True)
-    _timestamp = Column('timestamp', DateTime, default=datetime.datetime.now())
+    _timestamp = Column('timestamp', DateTime, default=func.current_timestamp())
     date = Column(Date)
     _user = Column('user_id', Integer, ForeignKey('users.user_id'))
     _account = Column('account_id', Integer, ForeignKey('accounts.account_id'))
@@ -1156,6 +1156,7 @@ class BudseCLI(object):
         if self._confirm('Reverse Transaction? ', default=True):
             transaction.status = not transaction.status
             app.status = 'Transaction %d reversed' % id
+            self.session.commit()
         else:
             app.status = 'Transaction %d not reversed' % id
 
