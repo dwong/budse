@@ -398,8 +398,8 @@ class Transaction(Base):
         return('Type%s %s%sAmount%s $%0.2f%sTransaction Date%s %s%sAccount%s '
                '%s%sDescription%s %s%s%s%sActive%s %s' %
                (tag_delimiter, action_type, str_delimiter, self.amount,
-                str_delimiter, tag_delimiter,
-                self.date.strftime(output_date, str_delimiter), tag_delimiter,
+                str_delimiter, tag_delimiter, 
+                self.date.strftime('', str_delimiter), tag_delimiter,
                 account, str_delimiter, tag_delimiter, self.description,
                 str_delimiter, deduction_repr, subdeposit_repr, tag_delimiter,
                 self.status))
@@ -433,7 +433,7 @@ class Transfer(Transaction):
         return('Type%s Transfer%sAmount%s $%0.2f%sTransaction Date%s %s%sAccou'
                'nt From%s %s%sAccount To%s %s%sDescription%s %s%sActive%s %s' %
                (tag_delimiter, str_delimiter, tag_delimiter, self.amount,
-                str_delimiter, tag_delimiter,  self.date.strftime(output_date),
+                str_delimiter, tag_delimiter,  self.date.strftime('%m/%d/%Y'),
                 str_delimiter,tag_delimiter, from_account.name, str_delimiter,
                 tag_delimiter, to_account.name, str_delimiter, tag_delimiter,
                 self.description, str_delimiter, tag_delimiter, self.status))
@@ -449,7 +449,7 @@ class Deduction(Transaction):
         return('Type%s Deduction%sAmount%s $%0.2f%sTransaction Date%s %s%s'
                'Description%s %s%sActive%s %s' %
                (tag_delimiter, str_delimiter, tag_delimiter, self.amount,
-                str_delimiter, tag_delimiter, self.date.strftime(output_date),
+                str_delimiter, tag_delimiter, self.date.strftime('%m/%d/%Y'),
                 str_delimiter, tag_delimiter, self.description, str_delimiter,
                 tag_delimiter, self.status))
         
@@ -545,7 +545,7 @@ class Deposit(Transaction):
         return('Type%s Deposit%sAmount%s $%0.2f%sTransaction Date%s %s%s'
                'Account%s %s%sDescription%s %s%sActive%s %s' %
                (tag_delimiter, str_delimiter, tag_delimiter, self.amount,
-                str_delimiter, tag_delimiter, self.date.strftime(output_date),
+                str_delimiter, tag_delimiter, self.date.strftime('%m/%d/%Y'),
                 str_delimiter, tag_delimiter, account, str_delimiter,
                 tag_delimiter, self.description, str_delimiter, tag_delimiter,
                 self.status))
@@ -576,7 +576,7 @@ class Withdrawal(Transaction):
         return('Type%s Withdrawal%sAmount%s $%0.2f%sTransaction Date%s %s%s'
                'Account%s %s%sDescription%s %s%sActive%s %s' %
                (tag_delimiter, str_delimiter, tag_delimiter, self.amount,
-                str_delimiter, tag_delimiter, self.date.strftime(output_date),
+                str_delimiter, tag_delimiter, self.date.strftime('%m/%d/%Y'),
                 str_delimiter, tag_delimiter, self.account.name, str_delimiter,
                 tag_delimiter, self.description, str_delimiter, tag_delimiter,
                 self.status))
@@ -702,17 +702,13 @@ class ConversionException(MetaException):
     def __str__(self):
         return str(self.expression)
 
-      
-# Actions that have meaning for all menus
-meta_actions = 'c - Cancel\nd - Done\nq - Quit Program'
-output_date = '%m/%d/%Y'
-# TODO move the input handling functions to BudseCLI
-        
-            
 
 
 class BudseCLI(object):
     """Command Line Interface for Budse."""
+    output_date = '%m/%d/%Y'
+    # Actions that have meaning for all menus
+    meta_actions = 'c - Cancel\nd - Done\nq - Quit Program'
 
     def __init__(self, session, user=None):
         object.__init__(self)
@@ -878,7 +874,7 @@ class BudseCLI(object):
         """
         choice = self._handle_input('Search\n\n1 - Date Range\n2 - Date\n3 - '
                                     'ID\n4 - Keywords\n%s\n\nChoice: ' %
-                                    meta_actions)
+                                    BudseCLI.meta_actions)
         limit = 10
         if choice == '1':
             begin_date = self._ask_date(prompt='Start of transactions')
@@ -967,7 +963,8 @@ class BudseCLI(object):
                 clear_screen()
                 prompt = ('Deduction Menu:\n1 - Add Deduction\n2 - Print '
                           'Deductions\n3 - Delete Deductions And Start Over'
-                          '\n%s\n%s\n\nInput: ' % (meta_actions, status))
+                          '\n%s\n%s\n\nInput: ' % (BudseCLI.meta_actions,
+                                                   status))
                 status = ''
                 try:
                     choice = self._handle_input(prompt)
@@ -1108,8 +1105,8 @@ class BudseCLI(object):
         same amount, but the idea of a transfer is useful to the user
         because the action seems more atomic to them.
 
-        Also the two actions can be grouped together with the same root_transaction_id
-        so that an undo would yield the proper result.
+        Also the two actions can be grouped together with the
+        same root_transaction_id so that an undo would yield the proper result.
 
         """
         print('Transfer Between Accounts\n')
@@ -1210,7 +1207,7 @@ class BudseCLI(object):
         """Report menu."""
         while 1:
             prompt = ('Create Report\n\n1 - Date Range\n%s\n%s\nChoice: ' % 
-                      (meta_actions, self.status))
+                      (BudseCLI.meta_actions, self.status))
             clear_screen()
             try:
                 choice = self._handle_input(prompt)
@@ -1255,11 +1252,13 @@ class BudseCLI(object):
             report_file.write('Account Name%sDeposits%sWithdrawals%sNet%s%s'
                               'Report for %s - %s\n' %
                               (delimiter, delimiter, delimiter, delimiter,
-                               delimiter, (begin_date.strftime(output_date)),
-                               (end_date.strftime(output_date))))
+                               delimiter,
+                               (begin_date.strftime(BudseCLI.output_date)),
+                               (end_date.strftime(BudseCLI.output_date))))
             parent_transactions = self.session.query(Transaction).\
                 filter(Transaction.date >= begin_date).\
                 filter(Transaction.date <= end_date).\
+                filter(Transaction.parent == None).\
                 order_by(Transaction.date).all()
             # dict of (account name, deposits, withdrawals, net change) tuples
             account_summary = {} 
@@ -1298,7 +1297,8 @@ class BudseCLI(object):
                         action = 'Informational'
                         account_name = 'Whole Account'
                     transaction_log += ('%s%s%s%s%0.2f%s%s%s%s\n' % 
-                                        (transaction.date.strftime(output_date),
+                                        (transaction.date.strftime(
+                                            BudseCLI.output_date),
                                          delimiter, action, delimiter,
                                          transaction.amount, delimiter,
                                          account_name, delimiter,
@@ -1363,7 +1363,7 @@ class BudseCLI(object):
                       '2 - Add New Account\n3 - Login Name\n4 - %s\n'
                       '5 - Deductions\n6 - Whole Account Actions\n'
                       '%s\n%s\n\nAction: ') %
-                      (status_modification, meta_actions, self.status))
+                      (status_modification, BudseCLI.meta_actions, self.status))
             clear_screen()
             try:
                 action = self._handle_input(prompt)
@@ -1466,7 +1466,7 @@ class BudseCLI(object):
             else:
                 prompt = ("Deductions (changes saved when user enters D'one):"
                           "\n\n%sn - New Deduction\n%s\n%s\n\nModify: " %
-                          (deduction_list, meta_actions, status))
+                          (deduction_list, BudseCLI.meta_actions, status))
             status = ''
             try:
                 choice = self._handle_input(prompt)
@@ -1573,7 +1573,8 @@ class BudseCLI(object):
             prompt = ('Modify account %s:\n1 - Name\n2 - Description\n' 
                       '3 - Type\n4 - Amount\n5 - %s\n6 - Gross vs Net\n'
                       '%s\n%s\n\nAction: ' % (account.name, status_modification,
-                                              meta_actions, self.status))
+                                              BudseCLI.meta_actions,
+                                              self.status))
                       
             try:
                 action = self._handle_input(prompt)
@@ -2143,7 +2144,7 @@ class BudseCLI(object):
         return self.user
 
 def _clear_screen():
-    """Execute a command to clear the screen for the console application.
+    """Execute a command to clear the screen for the console application.      
     
     Registered names (as of 9/2008): 
     'posix', 'nt', 'mac', 'os2', 'ce', 'java', 'riscos'
@@ -2191,7 +2192,7 @@ if __name__ == "__main__":
         prompt = ('Main Menu\n\n1 - Deposit\n2 - Withdraw\n3 - Balance\n'
                   '4 - Transfer\n5 - Search\n6 - Create Report\n'
                   '7 - Undo Transaction\n8 - Preferences\n'
-                  '%s\n%s\n\nAction: ') % (meta_actions, app.status)
+                  '%s\n%s\n\nAction: ') % (BudseCLI.meta_actions, app.status)
         try:
             action = app._handle_input(prompt)
         except (CancelException, DoneException):
