@@ -51,7 +51,8 @@ debug = opts.debug
 database_file = opts.database
 
 # Homegrown XML/S-expressions
-str_delimiter = ',|,'  # A string that is unlikely to be used by the user
+# Strings that are unlikely to be used by the user in descriptions, etc
+str_delimiter = ',|,'  
 tag_delimiter = ',:,'
 
 engine = create_engine('sqlite:///%s' % database_file)
@@ -503,7 +504,7 @@ class Deposit(Transaction):
                 self.deposits.append(deposit)
             # Execute deductions
             running_total -= deduction_total
-            # Process all fixed for
+            # Process all fixed amounts at once
             for account in filter_accounts(self.user.accounts,
                                            percentage=False):
                 if running_total > 0:
@@ -649,7 +650,6 @@ def _require_reconfiguration(accounts, check_gross=True, check_net=True,
             net_reconfiguration = True
     return gross_reconfiguration, net_reconfiguration
         
-#TODO 10 turn off prompting for deducting from gross?
 
 class BudseException(Exception):
     """Base class for exceptions in this module."""
@@ -701,7 +701,6 @@ class ConversionException(MetaException):
 
     def __str__(self):
         return str(self.expression)
-
 
 
 class BudseCLI(object):
@@ -814,7 +813,6 @@ class BudseCLI(object):
                 # Also parse string rather than using hardcoded slices
         return date
 
-    # Use this instead of _handle_input when possible
     def _ask_string(self, prompt='Description? '):
         """Query user for a string, usually a description.
 
@@ -846,7 +844,10 @@ class BudseCLI(object):
             except ConversionException:
                 print 'Invalid value'
         # Only keep 2 decimal places of precision for these floats
-        return round(amount, 2)
+        if type==float:
+            return round(amount, 2)
+        else:
+            return amount
             
     def _get_status(self):
         """Reset the status after retrieving it."""
@@ -872,9 +873,9 @@ class BudseCLI(object):
         A list Transaction objects
 
         """
-        choice = self._handle_input('Search\n\n1 - Date Range\n2 - Date\n3 - '
-                                    'ID\n4 - Keywords\n%s\n\nChoice: ' %
-                                    BudseCLI.meta_actions)
+        choice = self._ask_string('Search\n\n1 - Date Range\n2 - Date\n3 - '
+                                  'ID\n4 - Keywords\n%s\n\nChoice: ' %
+                                  BudseCLI.meta_actions)
         limit = 10
         if choice == '1':
             begin_date = self._ask_date(prompt='Start of transactions')
@@ -891,7 +892,7 @@ class BudseCLI(object):
                 filter(Transaction.parent == None).\
                 order_by(desc(Transaction.date))[:limit]
         elif choice == '3':
-            id = self._handle_input('Unique ID of transaction: ', int)
+            id = self._ask_amount('Unique ID of transaction: ', int)
             return [self.session.query(Transaction).\
                 filter(Transaction.id == id).\
                 filter(Transaction.parent == None).one()]
@@ -967,7 +968,7 @@ class BudseCLI(object):
                                                    status))
                 status = ''
                 try:
-                    choice = self._handle_input(prompt)
+                    choice = self._ask_string(prompt)
                 except DoneException:
                     break
                 if choice == '1':
@@ -1046,9 +1047,6 @@ class BudseCLI(object):
             else:
                 self.session.add(deposit)
                 indent = '  '
-                # TODO get XML back from __str__ function, which can be parsed
-                #    more easily?  Might not be that necessary, though since it
-                #    is just a string for output
                 print('\n==  Deposit Details  ==\n')
                 self.output_transactions([deposit])
                 if self._confirm('Execute deposit?', True):
@@ -1142,13 +1140,14 @@ class BudseCLI(object):
     
     def reverse_transaction(self):
         """Undo whatever effect a transaction group had."""
-        id = self._handle_input('Transaction ID: ', int)
+        id = self._ask_amount('Transaction ID: ', int)
         try:
             transaction = self.session.query(Transaction).\
                           filter(Transaction.id == id).\
                           filter(Transaction.parent == None).one()
         except NoResultFound:
-            print('ID is not a valid root transaction ID')
+            self.status = 'ID is not a valid root transaction ID'
+            return
         self.output_transactions([transaction])
         if self._confirm('Reverse Transaction? ', default=True):
             transaction.status = not transaction.status
@@ -1210,7 +1209,7 @@ class BudseCLI(object):
                       (BudseCLI.meta_actions, self.status))
             clear_screen()
             try:
-                choice = self._handle_input(prompt)
+                choice = self._ask_string(prompt)
                 if choice == '1':
                     self._create_report_by_date()
                     break
@@ -1366,7 +1365,7 @@ class BudseCLI(object):
                       (status_modification, BudseCLI.meta_actions, self.status))
             clear_screen()
             try:
-                action = self._handle_input(prompt)
+                action = self._ask_string(prompt)
                 if action == '1':
                     self.modify_account()
                 elif action == '2':
@@ -1400,7 +1399,7 @@ class BudseCLI(object):
             try:
                 while 1:   # Loop for a non-null name
                     try:
-                        user.name = self._handle_input('New login name: ')
+                        user.name = self._ask_string('New login name: ')
                     except TypeError as e:
                         print(e)
                     else:
@@ -1469,7 +1468,7 @@ class BudseCLI(object):
                           (deduction_list, BudseCLI.meta_actions, status))
             status = ''
             try:
-                choice = self._handle_input(prompt)
+                choice = self._ask_string(prompt)
             except DoneException:
                 if deductions_changed:
                     deductions_changed = True
@@ -1498,7 +1497,7 @@ class BudseCLI(object):
                               '3 - Delete\n\nChoice: ' % 
                               (amount, description))
                     try:
-                        option = self._handle_input(prompt, int)
+                        option = self._ask_amount(prompt, int)
                     except DoneException:
                         continue
                     status = 'Deduction unchanged'
@@ -1577,7 +1576,7 @@ class BudseCLI(object):
                                               self.status))
                       
             try:
-                action = self._handle_input(prompt)
+                action = self._ask_string(prompt)
             except (CancelException, DoneException):
                 break
             check_reconfiguration = False
@@ -1616,7 +1615,7 @@ class BudseCLI(object):
             print('Existing name: %s' % current_name)
             while 1:    # Loop for a non-null name
                 try:
-                    account.name = self._handle_input('New name: ')
+                    account.name = self._ask_string('New name: ')
                 except TypeError as e:
                     print(e)
                 else:
@@ -1685,7 +1684,7 @@ class BudseCLI(object):
                 prompt = ("Account Type:\nP'ercentage\nF'ixed\n%s\nChoice: " %
                           status)
                 status = ''
-                choice = self._handle_input(prompt).upper()
+                choice = self._ask_string(prompt).upper()
                 if choice.startswith('P'):
                     account.percentage_or_fixed = Account.PERCENTAGE
                     type_modified = True
@@ -1786,7 +1785,7 @@ class BudseCLI(object):
                 prompt = ("For whole account actions, affect:\nG'ross\n"
                           "N'et\n%s\nChoice: " % status)
                 status = ''
-                choice = self._handle_input(prompt).upper()
+                choice = self._ask_string(prompt).upper()
                 if choice.startswith('G'):
                     account.affect_gross = True
                     gross_modified = True
@@ -1829,7 +1828,7 @@ class BudseCLI(object):
         while account is None:
             try:
                 # Pretty indexes
-                index = self._handle_input('\n%s' % prompt, int) - 1 
+                index = self._ask_amount('\n%s' % prompt, int) - 1 
                 if index >= 0 and index < len(accounts):
                     account = accounts[index]
                 else:
@@ -1886,7 +1885,7 @@ class BudseCLI(object):
             prompt += 'Total: %0.2f\n%s\nModify: ' % (total, status)
             status = ''
             try:
-                choice = self._handle_input(prompt, int) - 1 # Pretty index
+                choice = self._ask_amount(prompt, int) - 1 # Pretty index
                 if choice >= 0 and choice < len(gross_percentage):
                     amount = self._ask_amount()
                     if self._confirm(("Use %0.2f for '%sn'" %
@@ -1941,7 +1940,7 @@ class BudseCLI(object):
                 prompt += 'Total: %0.2f\n%s\nModify: ' % (total, status)
                 status = ''
                 try:
-                    choice = self._handle_input(prompt, int) - 1 # Pretty index
+                    choice = self._ask_amount(prompt, int) - 1 # Pretty index
                     if choice >= 0 and choice < len(net_percentage):
                         amount = self._ask_amount()
                         if self._confirm(("Use %0.2f for '%s'" %
@@ -2191,14 +2190,12 @@ if __name__ == "__main__":
     while 1:
         prompt = ('Main Menu\n\n1 - Deposit\n2 - Withdraw\n3 - Balance\n'
                   '4 - Transfer\n5 - Search\n6 - Create Report\n'
-                  '7 - Undo Transaction\n8 - Preferences\n'
-                  '%s\n%s\n\nAction: ') % (BudseCLI.meta_actions, app.status)
+                  '7 - Undo Transaction\n8 - Preferences\nq - Quit\n%s\n\n'
+                  'Action: ' % app.status)
         try:
-            action = app._handle_input(prompt)
+            action = app._ask_string(prompt)
         except (CancelException, DoneException):
-            app.status = 'Main menu, cannot backup any further'
-            clear_screen()
-            continue
+            pass
         if action == '1':
             clear_screen()
             app.make_deposit()
