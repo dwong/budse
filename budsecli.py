@@ -582,7 +582,7 @@ class BudseCLI(object):
                                (end_date.strftime(BudseCLI.output_date))))
             parent_transactions = self.session.query(budse.Transaction).\
                 filter(budse.Transaction.date >= begin_date).\
-                filter(BudseTransaction.date <= end_date).\
+                filter(budse.Transaction.date <= end_date).\
                 filter(budse.Transaction.parent == None).\
                 order_by(budse.Transaction.date).all()
             # dict of (account name, deposits, withdrawals, net change) tuples
