@@ -529,8 +529,6 @@ class Deposit(Transaction):
                                       parent=self)
                     session.add(deposit)
                     self.deposits.append(deposit)
-            else:
-                raise FundsException('Insufficient funds for deposit')
             final = int(float(running_total) * 100)
             assert final == 0, 'Balance of %0.2f remains' % (final / 100)
         else:

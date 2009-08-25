@@ -361,18 +361,19 @@ class BudseCLI(object):
                 if deduction_tuples is not None:
                     for (amt, desc) in deduction_tuples:
                         deductions.append(
-                            Deduction(user=self.user, date=date, amount=amt,
-                                      description=desc))
+                            budse.Deduction(user=self.user, date=date,
+                                            amount=amt, description=desc))
             try:
                 deposit = budse.Deposit(date=date, user=self.user,
                                         amount=amount, description=description,
                                         account=account, deductions=deductions)
-            except FundsException, e:
+            except budse.FundsException, e:
                 self.status = str(e)
                 return
             else:
                 self.session.add(deposit)
                 indent = '  '
+                clear_screen()
                 print('\n==  Deposit Details  ==\n')
                 self.output_transactions([deposit])
                 if self._confirm('Execute deposit?', True):
@@ -408,6 +409,7 @@ class BudseCLI(object):
                                           date=date, description=description,
                                           account=account)
             self.session.add(withdrawal)
+            clear_screen()
             print('\n== Withdrawal Details ==')
             self.output_transactions([withdrawal])
             if self._confirm('Execute withdrawal?', True):
@@ -448,6 +450,7 @@ class BudseCLI(object):
                                       description=description,
                                       to_account=deposit_account,
                                       from_account=withdrawal_account)
+            clear_screen()
             print('\n== Transfer Details ==')
             self.output_transactions([transfer])
             if self._confirm('Execute transfer?', default=True):
@@ -474,6 +477,7 @@ class BudseCLI(object):
         except NoResultFound:
             self.status = 'ID is not a valid root transaction ID'
             return
+        clear_screen()
         self.output_transactions([transaction])
         if self._confirm('Reverse Transaction? ', default=True):
             transaction.status = not transaction.status
@@ -1324,6 +1328,7 @@ class BudseCLI(object):
             self.session.rollback()
             assert account not in self.session
             return None
+        clear_screen()
         account_repr = '%s' % account
         if not self._confirm('%s\nCreate account? ' %
                              (account_repr.replace(budse.str_delimiter,'\n')).\
