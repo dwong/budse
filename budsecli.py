@@ -5,7 +5,7 @@
 #     1.0
 #
 # Description:
-#     Budget finances library
+#     Budse with a Command Line Interface (CLI)
 #
 # Requirements:
 #     1) Python 2.6.* - might be (but not guaranteed to be) Py3k compatible

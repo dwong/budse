@@ -5,7 +5,7 @@
 #     0.3
 #
 # Description:
-#     Budget finances on the console
+#     Budget library
 #
 # Requirements:
 #     1) Python 2.6.* - might be (but not guaranteed to be) Py3k compatible
@@ -24,7 +24,6 @@
 import datetime
 #import pdb
 from optparse import OptionParser
-
 
 from sqlalchemy import Table, Column, Integer, String, ForeignKey, desc
 from sqlalchemy import create_engine, DateTime, Date, MetaData, Boolean, or_
@@ -58,13 +57,17 @@ Session = sessionmaker(bind=engine)
 session = None
 
 class UpperComparator(ColumnProperty.Comparator):
+    """Upper case strings to compare them without regard to case."""
     def __eq__(self, other):
         return func.upper(self.__clause_element__()) == func.upper(other)
 
 ########
-#CLASSES
+# CLASSES
 ########
 class Account(Base):
+    """A sub-account that the user can deposit and withdraw from."""
+
+    # Pseudo class variables that have meaning in the database
     PERCENTAGE = 'percentage'
     FIXED = 'fixed'
 
@@ -154,6 +157,8 @@ class Account(Base):
 
 
 class User(Base):
+    """The user that is accessing the library."""
+
     __tablename__ = 'users'
 
     id = Column('user_id', Integer, primary_key=True)
@@ -205,6 +210,10 @@ class User(Base):
         except AttributeError:
             return 'Never'
         
+    # General delimiters that are used within the string that is stored
+    # in the database.
+    # This can be a problem if the user attempts to use them in the deduction
+    # description
     _deduction_delimiter = ';'
     _deduction_separater = ':'
     def _get_deductions(self):
@@ -274,6 +283,9 @@ class User(Base):
 
 
 class Transaction(Base):
+    """Base class for all transactions."""
+
+    # Pseudo static class variables that also have meaning in the database
     DEPOSIT = '+'
     WITHDRAWAL = '-'
     DEDUCTION = '|'
@@ -404,9 +416,9 @@ class Transaction(Base):
                 self.status))
 
 
-
-
 class Transfer(Transaction):
+    """A deposit and withdrawal."""
+    
     __mapper_args__ = {'polymorphic_identity':Transaction.TRANSFER}
 
     def __init__(self, user, amount, date, to_account, from_account,
@@ -436,8 +448,11 @@ class Transfer(Transaction):
                 str_delimiter,tag_delimiter, from_account.name, str_delimiter,
                 tag_delimiter, to_account.name, str_delimiter, tag_delimiter,
                 self.description, str_delimiter, tag_delimiter, self.status))
+
         
 class Deduction(Transaction):
+    """A deduction is subtracted from the gross amount of a Deposit."""
+
     __mapper_args__ = {'polymorphic_identity':Transaction.DEDUCTION}
 
     def __init__(self, user, amount, date, parent=None, description=None):
@@ -451,8 +466,11 @@ class Deduction(Transaction):
                 str_delimiter, tag_delimiter, self.date.strftime('%m/%d/%Y'),
                 str_delimiter, tag_delimiter, self.description, str_delimiter,
                 tag_delimiter, self.status))
+
         
 class Deposit(Transaction):
+    """Amount to be placed into one or all of the user's Accounts."""
+
     __mapper_args__ = {'polymorphic_identity':Transaction.DEPOSIT}
 
     def __init__(self, user, amount, date, description=None,
@@ -481,6 +499,7 @@ class Deposit(Transaction):
         """
         Transaction.__init__(self, user=user, amount=amount, account=account,
                              description=description, date=date, parent=parent)
+        # Calculate deductions
         deduction_total = 0.00
         self.deductions = deductions
         if self.deductions is not None:
@@ -502,7 +521,7 @@ class Deposit(Transaction):
                 self.deposits.append(deposit)
             # Execute deductions
             running_total -= deduction_total
-            # Process all fixed amounts at once
+            # Process all (gross and net) fixed amounts at once
             for account in filter_accounts(self.user.accounts,
                                            percentage=False):
                 if running_total > 0:
@@ -547,7 +566,10 @@ class Deposit(Transaction):
                 tag_delimiter, self.description, str_delimiter, tag_delimiter,
                 self.status))
             
+
 class Withdrawal(Transaction):
+    """Subtract from the total of an Account."""
+
     __mapper_args__ = {'polymorphic_identity':Transaction.WITHDRAWAL}
 
     def __init__(self, user, amount, date, description=None,
@@ -580,9 +602,19 @@ class Withdrawal(Transaction):
     
 
 ######
-#UTILITY FUNCTIONS
+# UTILITY FUNCTIONS
 ######
 def initialize():
+    """Initialize the library.
+
+    This must be called by any user program before utilizing to ensure
+    that the database is established and a session is created.
+
+    Returns:
+        Session object to access the database
+
+    """
+
     Base.metadata.create_all(engine)
     global session    # Each instance can only have a single session
     session = Session()
@@ -704,6 +736,3 @@ class ConversionException(MetaException):
 
     def __str__(self):
         return str(self.expression)
-
-
-
