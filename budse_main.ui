@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <ui version="4.0">
- <class>MainWindow</class>
- <widget class="QMainWindow" name="MainWindow">
+ <class>BudseWindow</class>
+ <widget class="QMainWindow" name="BudseWindow">
   <property name="enabled">
    <bool>true</bool>
   </property>
@@ -9,8 +9,8 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>804</width>
-    <height>595</height>
+    <width>1037</width>
+    <height>746</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -26,26 +26,106 @@
          <number>7</number>
         </property>
         <item>
-         <widget class="QTableView" name="snapshot">
-          <property name="sizePolicy">
-           <sizepolicy hsizetype="Fixed" vsizetype="Expanding">
-            <horstretch>0</horstretch>
-            <verstretch>0</verstretch>
-           </sizepolicy>
+         <layout class="QVBoxLayout" name="verticalLayout_6">
+          <property name="spacing">
+           <number>0</number>
           </property>
-          <property name="maximumSize">
-           <size>
-            <width>215</width>
-            <height>16777215</height>
-           </size>
+          <item>
+           <layout class="QHBoxLayout" name="horizontalLayout_8">
+            <item>
+             <widget class="QLabel" name="label">
+              <property name="maximumSize">
+               <size>
+                <width>70</width>
+                <height>16777215</height>
+               </size>
+              </property>
+              <property name="text">
+               <string>Snapshot</string>
+              </property>
+             </widget>
+            </item>
+           </layout>
+          </item>
+          <item>
+           <widget class="QTableWidget" name="snapshot">
+            <property name="enabled">
+             <bool>true</bool>
+            </property>
+            <property name="showGrid">
+             <bool>false</bool>
+            </property>
+            <attribute name="horizontalHeaderCascadingSectionResizes">
+             <bool>true</bool>
+            </attribute>
+            <attribute name="horizontalHeaderStretchLastSection">
+             <bool>true</bool>
+            </attribute>
+            <attribute name="verticalHeaderVisible">
+             <bool>false</bool>
+            </attribute>
+            <attribute name="verticalHeaderCascadingSectionResizes">
+             <bool>true</bool>
+            </attribute>
+            <attribute name="verticalHeaderDefaultSectionSize">
+             <number>20</number>
+            </attribute>
+            <attribute name="verticalHeaderHighlightSections">
+             <bool>false</bool>
+            </attribute>
+            <attribute name="verticalHeaderMinimumSectionSize">
+             <number>10</number>
+            </attribute>
+           </widget>
+          </item>
+         </layout>
+        </item>
+        <item>
+         <layout class="QVBoxLayout" name="verticalLayout_5">
+          <property name="spacing">
+           <number>0</number>
           </property>
-          <property name="showGrid">
-           <bool>false</bool>
-          </property>
-          <property name="gridStyle">
-           <enum>Qt::NoPen</enum>
-          </property>
-         </widget>
+          <item>
+           <layout class="QHBoxLayout" name="horizontalLayout_7">
+            <item>
+             <widget class="QLabel" name="label_4">
+              <property name="maximumSize">
+               <size>
+                <width>70</width>
+                <height>16777215</height>
+               </size>
+              </property>
+              <property name="text">
+               <string>Accounts</string>
+              </property>
+             </widget>
+            </item>
+           </layout>
+          </item>
+          <item>
+           <widget class="QScrollArea" name="accountsArea">
+            <property name="frameShape">
+             <enum>QFrame::NoFrame</enum>
+            </property>
+            <property name="widgetResizable">
+             <bool>false</bool>
+            </property>
+            <property name="alignment">
+             <set>Qt::AlignLeading|Qt::AlignLeft|Qt::AlignTop</set>
+            </property>
+            <widget class="QWidget" name="scrollAreaWidgetContents_2">
+             <property name="geometry">
+              <rect>
+               <x>0</x>
+               <y>0</y>
+               <width>235</width>
+               <height>96</height>
+              </rect>
+             </property>
+            </widget>
+           </widget>
+          </item>
+         </layout>
         </item>
         <item>
          <layout class="QVBoxLayout" name="verticalLayout_2">
@@ -53,35 +133,7 @@
            <number>0</number>
           </property>
           <item>
-           <widget class="QGroupBox" name="accounts">
-            <property name="minimumSize">
-             <size>
-              <width>0</width>
-              <height>100</height>
-             </size>
-            </property>
-            <property name="toolTip">
-             <string>Select Account(s) For Transactions To Display</string>
-            </property>
-            <property name="title">
-             <string>Account(s)</string>
-            </property>
-            <property name="alignment">
-             <set>Qt::AlignCenter</set>
-            </property>
-            <property name="flat">
-             <bool>false</bool>
-            </property>
-           </widget>
-          </item>
-          <item>
-           <layout class="QHBoxLayout" name="horizontalLayout_2">
-            <property name="spacing">
-             <number>5</number>
-            </property>
-            <property name="topMargin">
-             <number>10</number>
-            </property>
+           <layout class="QHBoxLayout" name="horizontalLayout_6">
             <item>
              <widget class="QLabel" name="label_3">
               <property name="maximumSize">
@@ -95,6 +147,32 @@
               </property>
              </widget>
             </item>
+           </layout>
+          </item>
+          <item>
+           <widget class="QTextEdit" name="keywords">
+            <property name="enabled">
+             <bool>false</bool>
+            </property>
+            <property name="acceptDrops">
+             <bool>false</bool>
+            </property>
+            <property name="toolTip">
+             <string>Keywords to look for</string>
+            </property>
+            <property name="readOnly">
+             <bool>true</bool>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <layout class="QHBoxLayout" name="horizontalLayout_2">
+            <property name="spacing">
+             <number>5</number>
+            </property>
+            <property name="topMargin">
+             <number>10</number>
+            </property>
             <item>
              <layout class="QHBoxLayout" name="horizontalLayout">
               <property name="spacing">
@@ -103,7 +181,7 @@
               <item>
                <widget class="QLineEdit" name="keywordLine">
                 <property name="toolTip">
-                 <string>Comma-separated keywords</string>
+                 <string>Word or phrase to search for</string>
                 </property>
                 <property name="cursorPosition">
                  <number>0</number>
@@ -118,6 +196,9 @@
                   <height>25</height>
                  </size>
                 </property>
+                <property name="toolTip">
+                 <string>Add phrase</string>
+                </property>
                 <property name="text">
                  <string>+</string>
                 </property>
@@ -126,16 +207,6 @@
              </layout>
             </item>
            </layout>
-          </item>
-          <item>
-           <widget class="QTextEdit" name="keywords">
-            <property name="enabled">
-             <bool>false</bool>
-            </property>
-            <property name="acceptDrops">
-             <bool>false</bool>
-            </property>
-           </widget>
           </item>
          </layout>
         </item>
@@ -155,9 +226,9 @@
             </property>
             <property name="maximumDate">
              <date>
-              <year>2999</year>
-              <month>12</month>
-              <day>31</day>
+              <year>2009</year>
+              <month>8</month>
+              <day>28</day>
              </date>
             </property>
             <property name="gridVisible">
@@ -165,6 +236,9 @@
             </property>
             <property name="navigationBarVisible">
              <bool>true</bool>
+            </property>
+            <property name="dateEditAcceptDelay">
+             <number>200</number>
             </property>
            </widget>
           </item>
@@ -186,14 +260,20 @@
                </spacer>
               </item>
               <item>
-               <widget class="QPushButton" name="pushButton">
+               <widget class="QPushButton" name="resetButton">
+                <property name="toolTip">
+                 <string>Start over</string>
+                </property>
                 <property name="text">
                  <string>Reset</string>
                 </property>
                </widget>
               </item>
               <item>
-               <widget class="QPushButton" name="pushButton_2">
+               <widget class="QPushButton" name="searchButton">
+                <property name="toolTip">
+                 <string>Search!</string>
+                </property>
                 <property name="text">
                  <string>Search</string>
                 </property>
@@ -221,7 +301,7 @@
        </layout>
       </item>
       <item>
-       <widget class="QTableView" name="transaction_table">
+       <widget class="QTableWidget" name="transactions">
         <property name="minimumSize">
          <size>
           <width>0</width>
@@ -229,11 +309,17 @@
          </size>
         </property>
         <property name="toolTip">
-         <string>Transaction list</string>
+         <string>Transactions matching parameters</string>
         </property>
-        <property name="sortingEnabled">
+        <attribute name="horizontalHeaderCascadingSectionResizes">
          <bool>true</bool>
-        </property>
+        </attribute>
+        <attribute name="verticalHeaderVisible">
+         <bool>false</bool>
+        </attribute>
+        <attribute name="verticalHeaderCascadingSectionResizes">
+         <bool>true</bool>
+        </attribute>
        </widget>
       </item>
      </layout>
@@ -245,7 +331,7 @@
     <rect>
      <x>0</x>
      <y>0</y>
-     <width>804</width>
+     <width>1037</width>
      <height>22</height>
     </rect>
    </property>
@@ -265,9 +351,9 @@
      <property name="title">
       <string>New</string>
      </property>
-     <addaction name="actionDeposit"/>
-     <addaction name="actionWithdrawal"/>
-     <addaction name="actionTransfer"/>
+     <addaction name="newDeposit"/>
+     <addaction name="newWithdrawal"/>
+     <addaction name="newTransfer"/>
     </widget>
     <widget class="QMenu" name="menuReports">
      <property name="title">
@@ -298,23 +384,23 @@
     <string>Ctrl+,</string>
    </property>
   </action>
-  <action name="actionDeposit">
+  <action name="newDeposit">
    <property name="text">
     <string>Deposit</string>
    </property>
    <property name="shortcut">
-    <string>Meta+Shift++</string>
+    <string>+</string>
    </property>
   </action>
-  <action name="actionWithdrawal">
+  <action name="newWithdrawal">
    <property name="text">
     <string>Withdrawal</string>
    </property>
    <property name="shortcut">
-    <string>Meta+-</string>
+    <string>-</string>
    </property>
   </action>
-  <action name="actionTransfer">
+  <action name="newTransfer">
    <property name="text">
     <string>Transfer</string>
    </property>
@@ -352,76 +438,28 @@
    <slot>click()</slot>
    <hints>
     <hint type="sourcelabel">
-     <x>442</x>
-     <y>140</y>
+     <x>678</x>
+     <y>289</y>
     </hint>
     <hint type="destinationlabel">
-     <x>471</x>
-     <y>143</y>
+     <x>707</x>
+     <y>292</y>
     </hint>
    </hints>
   </connection>
   <connection>
-   <sender>endDate</sender>
-   <signal>selectionChanged()</signal>
-   <receiver>pushButton_2</receiver>
-   <slot>click()</slot>
-   <hints>
-    <hint type="sourcelabel">
-     <x>592</x>
-     <y>161</y>
-    </hint>
-    <hint type="destinationlabel">
-     <x>679</x>
-     <y>202</y>
-    </hint>
-   </hints>
-  </connection>
-  <connection>
-   <sender>pushButton</sender>
-   <signal>clicked()</signal>
-   <receiver>endDate</receiver>
-   <slot>showToday()</slot>
-   <hints>
-    <hint type="sourcelabel">
-     <x>577</x>
-     <y>219</y>
-    </hint>
-    <hint type="destinationlabel">
-     <x>553</x>
-     <y>154</y>
-    </hint>
-   </hints>
-  </connection>
-  <connection>
-   <sender>pushButton</sender>
+   <sender>resetButton</sender>
    <signal>clicked()</signal>
    <receiver>keywords</receiver>
    <slot>clear()</slot>
    <hints>
     <hint type="sourcelabel">
-     <x>583</x>
-     <y>204</y>
+     <x>865</x>
+     <y>297</y>
     </hint>
     <hint type="destinationlabel">
-     <x>447</x>
-     <y>193</y>
-    </hint>
-   </hints>
-  </connection>
-  <connection>
-   <sender>addKeyword</sender>
-   <signal>clicked()</signal>
-   <receiver>pushButton_2</receiver>
-   <slot>click()</slot>
-   <hints>
-    <hint type="sourcelabel">
-     <x>462</x>
-     <y>129</y>
-    </hint>
-    <hint type="destinationlabel">
-     <x>702</x>
-     <y>219</y>
+     <x>708</x>
+     <y>249</y>
     </hint>
    </hints>
   </connection>
