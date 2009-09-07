@@ -572,8 +572,8 @@ class Withdrawal(Transaction):
 
     __mapper_args__ = {'polymorphic_identity':Transaction.WITHDRAWAL}
 
-    def __init__(self, user, amount, date, description=None,
-                 account=None, parent=None):
+    def __init__(self, user, amount, date, description,
+                 account, parent=None):
         """An object representation of a withdrawal transaction.
 
         Keyword arguments:
