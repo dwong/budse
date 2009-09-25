@@ -506,50 +506,87 @@ class Deposit(Transaction):
             for deduction in self.deductions:
                 deduction_total += deduction.amount
                 deduction.parent = self
+            if self.amount < deduction_total:
+                raise FundsException('Deductions are more than the deposit.')
         self.deposits = []
         if self.account is None:
+            # list of (Account, amount) tuples
+            gross_deposits = []
+            fixed_deposits = []
+            net_deposits = []
+
+            # Calculate minimum deposit for error message
+            minimum_deposit = deduction_total
+            for account in filter_accounts(self.user.accounts, fixed=False,
+                                           gross=True):
+                minimum_deposit += self.amount * account.amount
+            for account in filter_accounts(self.user.accounts,
+                                           percentage=False):
+                minimum_deposit += account.amount
+
+            if self.amount <= minimum_deposit:
+                raise FundsException('Insufficient funds for whole account'
+                                     ' deposit.  (Minimum %0.2f)' %
+                                     minimum_deposit)
+
+            leftover = 0.00
             gross = running_total = self.amount
-            # Process gross percentage accounts
+            # Calculate gross deposits
             for account in filter_accounts(self.user.accounts, fixed=False,
                                            gross=True):
                 amount = gross * account.amount
+                leftover += amount - round(amount, 2)
+                amount = round(amount, 2)
                 running_total -= amount
-                deposit = Deposit(user=self.user, amount=amount, parent=self,
-                                  date=self.date, account=account, 
-                                  description=self.description)
-                session.add(deposit)
-                self.deposits.append(deposit)
+                gross_deposits.append((account, amount))
             # Execute deductions
             running_total -= deduction_total
-            # Process all (gross and net) fixed amounts at once
+            # Calculate fixed deposits
             for account in filter_accounts(self.user.accounts,
                                            percentage=False):
                 if running_total > 0:
                     running_total -= account.amount
-                    deposit = Deposit(user=self.user, amount=account.amount,
-                                      date=self.date, account=account, 
-                                      description=self.description,
-                                      parent=self)
-                    session.add(deposit)
-                    self.deposits.append(deposit)
+                    fixed_deposits.append((account, account.amount))
                 else:
                     raise FundsException('Insufficient funds for whole account'
                                          ' deposit')
-            # Process remaining with the net percentage accounts
+            # Calculate net deposits
             if running_total > 0:
                 net = running_total
                 for account in filter_accounts(self.user.accounts, fixed=False,
                                                gross=False):
                     amount = net * account.amount
+                    leftover += amount - round(amount, 2)
+                    amount = round(amount, 2)
                     running_total -= amount
-                    deposit = Deposit(user=self.user, amount=amount,
-                                      date=self.date, account=account,
-                                      description=self.description,
-                                      parent=self)
-                    session.add(deposit)
-                    self.deposits.append(deposit)
-            final = int(float(running_total) * 100)
-            assert final == 0, 'Balance of %0.2f remains' % (final / 100)
+                    net_deposits.append((account, amount))
+                else:
+                    account, amount = net_deposits.pop()
+                    amount += round(leftover, 2)
+                    net_deposits.append((account, amount))
+            
+            # Process gross percentage accounts
+            for account, amount in gross_deposits:
+                deposit = Deposit(user=self.user, amount=amount, parent=self,
+                                  date=self.date, account=account, 
+                                  description=self.description)
+                session.add(deposit)
+                self.deposits.append(deposit)
+            # Process all (gross and net) fixed amounts at once
+            for account, amount in fixed_deposits:
+                deposit = Deposit(user=self.user, amount=account.amount,
+                                  date=self.date, account=account, 
+                                  description=self.description, parent=self)
+                session.add(deposit)
+                self.deposits.append(deposit)
+            # Process remaining with the net percentage accounts
+            for account, amount in net_deposits:
+                deposit = Deposit(user=self.user, amount=amount,
+                                  date=self.date, account=account,
+                                  description=self.description, parent=self)
+                session.add(deposit)
+                self.deposits.append(deposit)
+            
         else:
             self.account.total += self.amount
 
