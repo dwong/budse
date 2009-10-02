@@ -1197,10 +1197,12 @@ class BudseCLI(object):
             budse._require_reconfiguration(accounts, active_only=active_only)
         if not gross_reconfig and not net_reconfig:
             return False
-        gross_percentage = filter_accounts(accounts, gross=True, fixed=False,
-                                           active_only=active_only)
-        net_percentage = filter_accounts(accounts, gross=False, fixed=False,
-                                         active_only=active_only)
+        gross_percentage = budse.filter_accounts(accounts, gross=True,
+                                                 fixed=False,
+                                                 active_only=active_only)
+        net_percentage = budse.filter_accounts(accounts, gross=False,
+                                               fixed=False,
+                                               active_only=active_only)
         gross_modified = net_modified = False
         status = ''
         while gross_reconfig:
