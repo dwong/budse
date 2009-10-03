@@ -382,8 +382,8 @@ class BudseCLI(object):
                         target = 'Whole Account'
                     else:
                         target = deposit.account.name
-                    self.status = ('Deposited $%0.2f into %s' %
-                                   (deposit.amount, target))
+                    self.status = ('Successfully made deposit of $%0.2f '
+                                   'into %s' % (deposit.amount, target))
                 else:
                     self.session.rollback()
                     self._clear_status()
