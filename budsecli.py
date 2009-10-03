@@ -1529,7 +1529,8 @@ if __name__ == "__main__":
         try:
             action = app._ask_string(prompt)
         except (budse.CancelException, budse.DoneException):
-            pass
+            clear_screen()
+            continue
         if action == '1':
             clear_screen()
             app.make_deposit()
