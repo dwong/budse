@@ -9,8 +9,8 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>1037</width>
-    <height>746</height>
+    <width>1039</width>
+    <height>755</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -213,34 +213,58 @@
         <item>
          <layout class="QVBoxLayout" name="verticalLayout">
           <item>
-           <widget class="QCalendarWidget" name="endDate">
-            <property name="toolTip">
-             <string>End Date For Transactions</string>
+           <layout class="QVBoxLayout" name="verticalLayout_7">
+            <property name="spacing">
+             <number>0</number>
             </property>
-            <property name="minimumDate">
-             <date>
-              <year>1970</year>
-              <month>1</month>
-              <day>1</day>
-             </date>
-            </property>
-            <property name="maximumDate">
-             <date>
-              <year>2009</year>
-              <month>8</month>
-              <day>28</day>
-             </date>
-            </property>
-            <property name="gridVisible">
-             <bool>false</bool>
-            </property>
-            <property name="navigationBarVisible">
-             <bool>true</bool>
-            </property>
-            <property name="dateEditAcceptDelay">
-             <number>200</number>
-            </property>
-           </widget>
+            <item>
+             <layout class="QHBoxLayout" name="horizontalLayout_9">
+              <item>
+               <widget class="QLabel" name="label_2">
+                <property name="text">
+                 <string>Transaction Date</string>
+                </property>
+                <property name="alignment">
+                 <set>Qt::AlignCenter</set>
+                </property>
+               </widget>
+              </item>
+             </layout>
+            </item>
+            <item>
+             <widget class="QCalendarWidget" name="endDate">
+              <property name="toolTip">
+               <string>Date of transactions</string>
+              </property>
+              <property name="selectedDate">
+               <date>
+                <year>1970</year>
+                <month>1</month>
+                <day>1</day>
+               </date>
+              </property>
+              <property name="minimumDate">
+               <date>
+                <year>1970</year>
+                <month>1</month>
+                <day>1</day>
+               </date>
+              </property>
+              <property name="gridVisible">
+               <bool>false</bool>
+              </property>
+              <property name="verticalHeaderFormat">
+               <enum>QCalendarWidget::NoVerticalHeader</enum>
+              </property>
+              <property name="navigationBarVisible">
+               <bool>true</bool>
+              </property>
+              <property name="dateEditAcceptDelay">
+               <number>200</number>
+              </property>
+             </widget>
+            </item>
+           </layout>
           </item>
           <item>
            <layout class="QHBoxLayout" name="horizontalLayout_4">
@@ -331,7 +355,7 @@
     <rect>
      <x>0</x>
      <y>0</y>
-     <width>1037</width>
+     <width>1039</width>
      <height>22</height>
     </rect>
    </property>
@@ -341,7 +365,7 @@
     </property>
     <addaction name="actionAbout_Budse"/>
     <addaction name="separator"/>
-    <addaction name="actionPreferences"/>
+    <addaction name="preferences"/>
    </widget>
    <widget class="QMenu" name="menuEdit">
     <property name="title">
@@ -376,12 +400,12 @@
    <addaction name="menuEdit_2"/>
   </widget>
   <widget class="QStatusBar" name="statusBar"/>
-  <action name="actionPreferences">
+  <action name="preferences">
    <property name="text">
     <string>Preferences...</string>
    </property>
    <property name="shortcut">
-    <string>Ctrl+,</string>
+    <string>Meta+P</string>
    </property>
   </action>
   <action name="newDeposit">
@@ -403,6 +427,9 @@
   <action name="newTransfer">
    <property name="text">
     <string>Transfer</string>
+   </property>
+   <property name="shortcut">
+    <string>=</string>
    </property>
   </action>
   <action name="actionUndo">
@@ -430,38 +457,5 @@
   </action>
  </widget>
  <resources/>
- <connections>
-  <connection>
-   <sender>keywordLine</sender>
-   <signal>returnPressed()</signal>
-   <receiver>addKeyword</receiver>
-   <slot>click()</slot>
-   <hints>
-    <hint type="sourcelabel">
-     <x>678</x>
-     <y>289</y>
-    </hint>
-    <hint type="destinationlabel">
-     <x>707</x>
-     <y>292</y>
-    </hint>
-   </hints>
-  </connection>
-  <connection>
-   <sender>resetButton</sender>
-   <signal>clicked()</signal>
-   <receiver>keywords</receiver>
-   <slot>clear()</slot>
-   <hints>
-    <hint type="sourcelabel">
-     <x>865</x>
-     <y>297</y>
-    </hint>
-    <hint type="destinationlabel">
-     <x>708</x>
-     <y>249</y>
-    </hint>
-   </hints>
-  </connection>
- </connections>
+ <connections/>
 </ui>
