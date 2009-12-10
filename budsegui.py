@@ -68,7 +68,7 @@ class PercentageTableWidgetItem(QtGui.QTableWidgetItem):
         """
         QtGui.QTableWidgetItem.__init__(self)
         self.value = value
-        self.setText('%0.2f%%' % (value * 100))
+        self.setText('%0.2f' % (value * 100))
 
     def __lt__(self, other):
         lt = False
@@ -183,6 +183,7 @@ class TransferDialog(QtGui.QDialog):
         self.ui.setupUi(self)
         self.user = user
         self.session = session
+        self.success = False
 
         self.ui.accountsComboTo.addItem('Choose account...', -1)
         self.ui.accountsComboFrom.addItem('Choose account...', -1)
@@ -266,6 +267,7 @@ class TransferDialog(QtGui.QDialog):
                            filter(budse.Account.id == from_id).one()
             transfer = budse.Transfer(self.user, amount, datetime.date.today(),
                                       to_account, from_account, description)
+            self.success = True
             QtGui.QWidget.hide(self)
         else:
             print('invalid!')
@@ -281,6 +283,7 @@ class DepositDialog(QtGui.QDialog):
         self.ui.setupUi(self)
         self.user = user
         self.session = session
+        self.success = False
 
         # Accounts table and drop down
         self.ui.accountsTable.horizontalHeader().setResizeMode(
@@ -434,7 +437,7 @@ class DepositDialog(QtGui.QDialog):
             except budse.FundsException as e:
                 errors.append(str(e))
             else:
-                print(deposit)
+                self.success = True
                 QtGui.QWidget.hide(self)
 
         if errors:  # errors can happen when creating the deposit as well
@@ -451,6 +454,7 @@ class WithdrawalDialog(QtGui.QDialog):
         self.ui.setupUi(self)
         self.user = user
         self.session = session
+        self.success = False
 
         # Fill account drop down
         for a in self.user.accounts:
@@ -495,6 +499,7 @@ class WithdrawalDialog(QtGui.QDialog):
         if not errors:
             withdrawal = budse.Withdrawal(self.user, amount, date,
                                           description, account)
+            self.success = True
             QtGui.QWidget.hide(self)
         else:
             print('invalid!')
@@ -510,58 +515,125 @@ class PreferencesDialog(QtGui.QDialog):
         self.user = user
         self.session = session
         
+        # Slots
+        self.ui.add_account.clicked.connect(self.add_account)
+        self.ui.add_deduction.clicked.connect(self.add_deduction)
+
         # Username
         self.ui.username.setText(self.user.name)
 
-        # Accounts
-        at = self.ui.accountsTable
-        at.horizontalHeader().setResizeMode(QtGui.QHeaderView.Stretch)
-        at.horizontalHeader().show()
-        at.verticalHeader().hide()
-        at.setColumnCount(3)
-        at.setHorizontalHeaderLabels(('Name', 'Type', 'Value'))
-        at.setRowCount(len(self.user.accounts))
-        # TODO need to allow for creating new accounts
+        # TODO keep track of the identity of each row, either adding
+        #      a hidden ID or storing the original values in an internal
+        #      data structure to compare the result against
 
+        # Accounts
+        self.at = self.ui.accountsTable
+        self.active_group = QtGui.QButtonGroup()
+        self.active_group.setExclusive(False)
         row = 0
         for a in self.user.accounts:
-            # Account
-            twi = QtGui.QTableWidgetItem(a.name)
-            at.setItem(row, 0, twi)
-            # Type
-            if a.affect_gross:
-                twi = QtGui.QTableWidgetItem('Gross')
-            else:
-                twi = QtGui.QTableWidgetItem('Net')
-            at.setItem(row, 1, twi)
-            # Amount
-            if a.percentage_or_fixed == budse.Account.PERCENTAGE:
-                twi = PercentageTableWidgetItem(a.amount)
-            else: # Fixed
-                twi = MonetaryTableWidgetItem(a.amount)
-            twi.setTextAlignment(QtCore.Qt.AlignRight)
-            at.setItem(row, 2, twi)
+            self.insert_account(row, a.id, a.name, a.affect_gross,
+                                a.percentage_or_fixed, a.amount, a.status)
             row += 1
-            
+#        self.at.resizeRowsToContents()
+           
         # Deductions
-        dt = self.ui.deductionsTable
-        dt.horizontalHeader().setResizeMode(QtGui.QHeaderView.Stretch)
-        dt.setRowCount(len(self.user.deductions))
-        dt.setColumnCount(2)
-        dt.setHorizontalHeaderLabels(('Amount', 'Description'))
-        dt.verticalHeader().hide()
+        self.dt = self.ui.deductionsTable
+        self.dt.setRowCount(len(self.user.deductions))
+#        dt.setColumnCount(3)
+#        dt.setHorizontalHeaderLabels(('Amount', 'Description', ''))
+#        dt.verticalHeader().hide()
         row = 0
         for a, desc in self.user.deductions:
             # Description
             twi = QtGui.QTableWidgetItem(desc)
             twi.setTextAlignment(QtCore.Qt.AlignLeft)
-            dt.setItem(row, 0, twi)
+            self.dt.setItem(row, 0, twi)
             # Amount
             twi = MonetaryTableWidgetItem(a)
             twi.setTextAlignment(QtCore.Qt.AlignRight)
-            dt.setItem(row, 1, twi)
+            self.dt.setItem(row, 1, twi)
+            # Delete
+            b = QtGui.QPushButton('-')
+#            b.setMaximumSize(1, 1)
+            self.dt.setCellWidget(row, 2, b)
             row += 1
+            # TODO set the size of the horizontal header based on the length of the contents
+        self.dt.resizeRowsToContents()
 
+    def add_account(self):
+        self.insert_account(self.at.rowCount(), -1, '', False,
+                            budse.Account.PERCENTAGE, 0, True)
+
+    def insert_account(self, row, id, name, gross, account_type, amount,
+                       active):
+        nc = 0 # Name column
+        vc = 1 # Value column
+        tc = 2 # Type column
+        gc = 3 # Gross column
+        ac = 4 # Active column
+
+        previous_count = self.at.rowCount()
+        self.at.setRowCount(previous_count + 1)
+
+        # Account
+        self.at.setItem(row, nc, QtGui.QTableWidgetItem(name))
+        # Affect gross
+        gross_or_net = QtGui.QComboBox()
+        gross_or_net.addItem('Net', 0)
+        gross_or_net.addItem('Gross', 1)
+        if gross:
+            gross_or_net.setCurrentIndex(1)
+        self.at.setCellWidget(row, gc, gross_or_net)
+        # Amount and Accont type
+        acct_type = QtGui.QComboBox()
+        acct_type.addItem('Percentage', 0)
+        acct_type.addItem('Fixed', 1)
+        if account_type == budse.Account.PERCENTAGE:
+            twi = PercentageTableWidgetItem(amount)
+            acct_type.setCurrentIndex(0)
+        else:
+            twi = MonetaryTableWidgetItem(amount)
+            acct_type.setCurrentIndex(1)
+        twi.setTextAlignment(QtCore.Qt.AlignHCenter)
+        self.at.setCellWidget(row, tc, acct_type)
+        self.at.setItem(row, vc, twi)
+        # Active checkbox
+        cb = QtGui.QCheckBox()
+        if active:
+            cb.setChecked(True)
+        self.at.setCellWidget(row, ac, cb)
+        self.active_group.addButton(cb)
+#        self.active_group.setId(cb, id)
+        self.at.resizeRowsToContents()
+
+    def add_deduction(self):
+        dt = self.ui.deductionsTable
+        dt.setRowCount(dt.rowCount() + 1)
+
+    def insert_deduction(self, name, amount, active):
+        nc = 0  # Name column
+        ac = 1  # Amount column
+        rc = 2  # Remove column
+
+    def save(self):
+        errors = []
+
+        # TODO
+
+        # loop through accounts
+        #   if it's changed in any way, update the account
+        #   if it's new, insert a new entry (maybe bulk insert)
+        # loop through deductions
+        #   if it's changed, update deduction
+        #   if it's new, insert a new deduction (maybe bulk insert)
+
+        if not errors:
+            QtGui.QWidget.hide(self)
+        else:
+            print('invalid')
+            for e in errors:
+                print(e)
 
 
 
@@ -721,6 +793,8 @@ class BudseGUI(QtGui.QMainWindow):
         # The default initial view is whole account
         self.ui.keywords.setPlainText('')
         self.whole_account.click()
+        self.transaction_made.emit()
+#        self.refresh()
 
     def select_whole_account(self):
         """Select the whole account (i.e., all of the accounts).
@@ -1069,16 +1143,20 @@ class BudseGUI(QtGui.QMainWindow):
     def make_deposit(self):
         deposit = DepositDialog(self.user, self.session)
         deposit.exec_()
-        self.transaction_made.emit()
+        if deposit.success:
+            self.transaction_made.emit()
 
     def make_withdrawal(self):
         withdrawal = WithdrawalDialog(self.user, self.session)
         withdrawal.exec_()
-        self.transaction_made.emit()
+        if withdrawal.success:
+            self.transaction_made.emit()
 
     def make_transfer(self):
         transfer = TransferDialog(self.user, self.session)
         transfer.exec_()
+        if transfer.success:
+            pass
         self.transaction_made.emit()
 
     def change_preferences(self):
