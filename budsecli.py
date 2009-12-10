@@ -1419,7 +1419,11 @@ class BudseCLI(object):
                                      new_user.name)
             clear_screen()
         clear_screen()
-        self.reconfigure_accounts(accounts, active_only=False)
+        completed_accounts = []
+        for acct in accounts:
+            if acct is not None:
+                completed_accounts.add(acct)
+        self.reconfigure_accounts(completed_accounts, active_only=False)
         if self._confirm(('%s\nCreate user %s?' %
                           ((str(new_user)).replace(budse.str_delimiter, '\n').\
                            replace(budse.tag_delimiter, ':'),
