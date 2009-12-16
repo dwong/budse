@@ -209,13 +209,13 @@ class BudseCLI(object):
                 filter(budse.Transaction.date >= begin_date).\
                 filter(budse.Transaction.date <= end_date).\
                 filter(budse.Transaction.parent == None).\
-                order_by(desc(budse.Transaction.date))[:limit]
+                order_by(desc(budse.Transaction.date))
         elif choice == '2':
             date = self._ask_date(prompt='Transaction date')
             return self.session.query(budse.Transaction).\
                 filter(budse.Transaction.date == date).\
                 filter(budse.Transaction.parent == None).\
-                order_by(desc(budse.Transaction.date))[:limit]
+                order_by(desc(budse.Transaction.date))
         elif choice == '3':
             id = self._ask_amount('Unique ID of transaction: ', int)
             return [self.session.query(budse.Transaction).\
