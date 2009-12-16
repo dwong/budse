@@ -51,7 +51,10 @@ database_file = opts.database
 str_delimiter = ',|,'  
 tag_delimiter = ',:,'
 
-engine = create_engine('sqlite:///%s' % database_file)
+if debug:
+    engine = create_engine('sqlite:///%s' % database_file, echo=True)
+else:
+    engine = create_engine('sqlite:///%s' % database_file)
 Base = declarative_base()
 Session = sessionmaker(bind=engine)
 session = None
