@@ -32,6 +32,7 @@ from sqlalchemy.orm import sessionmaker, scoped_session, relation, backref
 from sqlalchemy.orm import synonym
 from sqlalchemy.orm.properties import ColumnProperty
 from sqlalchemy.sql.expression import func
+from sqlalchemy.orm.exc import NoResultFound
 
 default_database = 'data.db'
 parser = OptionParser()
@@ -100,11 +101,11 @@ class Account(Base):
         
     def _get_amount(self):
         if self.percentage_or_fixed == Account.PERCENTAGE:
-            return float(self._transaction_amount) / 10000
+            return _format_out_amount(self._transaction_amount, 10000)
         else:
-            return float(self._transaction_amount) / 100
+            return _format_out_amount(self._transaction_amount)
     def _set_amount(self, amount):
-        self._transaction_amount = int(round(float(amount) * 100))
+        self._transaction_amount = _format_db_amount(amount)
     amount = synonym('_transaction_amount',
                      descriptor=property(_get_amount, _set_amount))
 
@@ -117,7 +118,7 @@ class Account(Base):
     name = synonym('_name', descriptor=property(_get_name, _set_name))
 
     def _get_total(self):
-        return float(self._total) / 100
+        return _format_out_amount(self._total)
     def _set_total(self, total):
         self._total = int(round(total * 100))
     total = synonym('_total', descriptor=property(_get_total, _set_total))
@@ -317,7 +318,16 @@ class Transaction(Base):
                         backref=backref('parent', remote_side=id))
 
     def __init__(self, date, user, description=None, amount=0.00, account=None,
-                 parent=None):
+                 parent=None, duplicate_override=False):
+        if not duplicate_override:
+            try:
+                duplicate = session.query(Transaction).\
+                                filter(Transaction.date == date).\
+                                filter(Transaction.amount ==
+                                       _format_db_amount(amount)).one()
+                raise DuplicateException('Possible duplicate found:%s' % duplicate)
+            except NoResultFound:
+                pass
         self.date = date
         self.user = user
         self.account = account
@@ -326,9 +336,9 @@ class Transaction(Base):
         self.parent = parent
 
     def _set_amount(self, amount):
-        self._amount = int(round(float(amount) * 100))
+        self._amount = _format_db_amount(amount)
     def _get_amount(self):
-        return float(self._amount) / 100
+        return _format_out_amount(self._amount)
     amount = synonym('_amount', descriptor=property(_get_amount, _set_amount))
 
     @synonym_for('_timestamp')
@@ -724,7 +734,13 @@ def _require_reconfiguration(accounts, check_gross=True, check_net=True,
         if total != 10000:
             net_reconfiguration = True
     return gross_reconfiguration, net_reconfiguration
-        
+
+def _format_db_amount(amount):
+    return int(round(float(amount) * 100))
+
+def _format_out_amount(amount, divisor=100):
+    return float(amount) / divisor
+
 
 class BudseException(Exception):
     """Base class for exceptions in this module."""
@@ -732,6 +748,14 @@ class BudseException(Exception):
 
 class FundsException(BudseException):
     """Incorrect funds for a specified action."""
+    def __init__(self, expression):
+        self.expression = expression
+
+    def __str__(self):
+        return str(self.expression)
+
+class DuplicateException(BudseException):
+    """Possible duplicate transaction."""
     def __init__(self, expression):
         self.expression = expression
 
