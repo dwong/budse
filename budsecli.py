@@ -860,6 +860,9 @@ class BudseCLI(object):
             except (budse.CancelException, budse.DoneException):
                 status = 'Canceled action'
                 continue
+            except ValueError:
+                status = 'Invalid Choice'
+                continue
         if deductions_changed:
             self.status = 'Deductions modified'
         else:
