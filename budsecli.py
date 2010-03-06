@@ -116,26 +116,55 @@ class BudseCLI(object):
         datetime.date object of desired date
 
         """
+        import re
+
+        now = datetime.date.today()
         date = None
-        output_format = '%Y-%m-%d'
-        prompt = ('%s? (YYYY-MM-DD, default %s) ' % 
-                  (prompt, default_date.strftime(output_format)))
+        prompt = ('%s? (default %s) ' %
+                  (prompt, default_date.strftime('%m/%d/%Y')))
         while date is None:
-            temp_input = self._handle_input(prompt)
-            if temp_input == '':
+            spam = self._handle_input(prompt)
+            if spam == '':
                 date = default_date
             else:
-                try:
-                    date = datetime.date(int(temp_input[0:4]), 
-                                         int(temp_input[5:7]), 
-                                         int(temp_input[8:10]))
-                except ValueError:
-                    print('Invalid date')
-                # TODO: Try parsing differently on raised exceptions:
-                #     1) MM/DD/YYYY
-                #     2) MM/DD (default year to this year)
-                #     3) MM/DD/YY (default to this century)
-                # Also parse string rather than using hardcoded slices
+                splits = re.split('[-/]', spam)
+                if len(splits) == 1:
+                    try:
+                        # DD (just the day)
+                        date = datetime.date(now.year, now.month, int(splits[0]))
+                    except ValueError:
+                        pass
+                elif len(splits) == 2:
+                    try:
+                        # MM/DD
+                        date = datetime.date(now.year,
+                                             int(splits[0]),
+                                             int(splits[1]))
+                    except ValueError, e:
+                        pass
+                elif len(splits) == 3:
+                    try:
+                        if int(splits[2]) < 100:
+                            # MM/DD/YY
+                            date = datetime.date(int(splits[2]) +
+                                                 now.year // 100 * 100,
+                                                 int(splits[0]),
+                                                 int(splits[1]))
+                        else:
+                            # MM/DD/YYYY
+                            date = datetime.date(int(splits[2]),
+                                                 int(splits[0]),
+                                                 int(splits[1]))
+                    except ValueError:
+                        try:
+                            # YYYY-MM-DD
+                            date = datetime.date(int(splits[0]),
+                                                 int(splits[1]),
+                                                 int(splits[2]))
+                        except ValueError:
+                            pass
+                if date is None:
+                    print("'%s' is not a valid date" % spam)
         return date
 
     def _ask_string(self, prompt='Description? '):
