@@ -319,21 +319,28 @@ class Transaction(Base):
 
     def __init__(self, date, user, description=None, amount=0.00, account=None,
                  parent=None, duplicate_override=False):
-        if not duplicate_override:
-            try:
-                duplicate = session.query(Transaction).\
-                                filter(Transaction.date == date).\
-                                filter(Transaction.amount ==
-                                       _format_db_amount(amount)).one()
-                raise DuplicateException('Possible duplicate found:%s' % duplicate)
-            except NoResultFound:
-                pass
         self.date = date
         self.user = user
         self.account = account
         self.amount = amount
         self.description = description
         self.parent = parent
+
+        if not duplicate_override:
+            duplicates = []
+            for t in session.query(Transaction).\
+                filter(Transaction.parent != parent).\
+                filter(Transaction.action != Transaction.TRANSFER).\
+                filter(Transaction.date == date).\
+                filter(Transaction.amount ==
+                       _format_db_amount(amount)).all():
+                duplicates.append(t)
+            if len(duplicates) > 0:
+                if len(duplicates) == 1:
+                    error = 'Possible duplicate found:%s' % duplicates[0]
+                else:
+                    error = 'Possible duplicates found:%s' % duplicates
+                raise DuplicateException(error)
 
     def _set_amount(self, amount):
         self._amount = _format_db_amount(amount)
@@ -451,9 +458,9 @@ class Transfer(Transaction):
 
     def __str__(self):
         from_account = session.query(Withdrawal).\
-                            filter(Withdrawal.parent == self).one().account
+                       filter(Withdrawal.parent == self).one().account
         to_account = session.query(Deposit).\
-                          filter(Deposit.parent == self).one().account
+                     filter(Deposit.parent == self).one().account
         return('Type%s Transfer%sAmount%s $%0.2f%sTransaction Date%s %s%sAccou'
                'nt From%s %s%sAccount To%s %s%sDescription%s %s%sActive%s %s' %
                (tag_delimiter, str_delimiter, tag_delimiter, self.amount,
