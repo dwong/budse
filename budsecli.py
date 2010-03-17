@@ -273,33 +273,37 @@ class BudseCLI(object):
         
         """
         # Tags to not print in children transactions
-        restricted = ['ACTIVE', 'TRANSACTION DATE'] 
-        for parent_transaction in transactions:
-            if parent_transaction.id is not None:
-                print('------Transaction ID: %d------' % parent_transaction.id)
-            print((str(parent_transaction).\
-                   replace(budse.str_delimiter, '\n')).\
-                   replace(budse.tag_delimiter, ':'))
-            if parent_transaction.children:
-                print('Sub-transactions:')
-            for transaction in parent_transaction.children:
-                action = amount = account = description = ''
-                for field in str(transaction).split(budse.str_delimiter):
-                    field_information = field.split(budse.tag_delimiter)
-                    tag = str(field_information[0]).upper()
-                    info = str(field_information[1]).strip()
-                    if tag.strip() in restricted:
-                        continue
-                    elif tag == 'TYPE':
-                        action = '%s of ' % info
-                    elif tag == 'AMOUNT':
-                        amount = info
-                    elif tag == 'DESCRIPTION':
-                        description = ' (%s)' % info
-                    elif tag == 'ACCOUNT':
-                        account = ' into %s' % info
-                print('    %s%s%s%s' % (action, amount, account, description))
-            print('')
+        restricted = ['ACTIVE', 'TRANSACTION DATE']
+        try:
+            for parent_transaction in transactions:
+                if parent_transaction.id is not None:
+                    print('------Transaction ID: %d------' %
+                          parent_transaction.id)
+                print((str(parent_transaction).\
+                       replace(budse.str_delimiter, '\n')).\
+                      replace(budse.tag_delimiter, ':'))
+                if parent_transaction.children:
+                    print('Sub-transactions:')
+                for transaction in parent_transaction.children:
+                    action = amount = account = description = ''
+                    for field in str(transaction).split(budse.str_delimiter):
+                        field_information = field.split(budse.tag_delimiter)
+                        tag = str(field_information[0]).upper()
+                        info = str(field_information[1]).strip()
+                        if tag.strip() in restricted:
+                            continue
+                        elif tag == 'TYPE':
+                            action = '%s of ' % info
+                        elif tag == 'AMOUNT':
+                            amount = info
+                        elif tag == 'DESCRIPTION':
+                            description = ' (%s)' % info
+                        elif tag == 'ACCOUNT':
+                            account = ' into %s' % info
+                    print('    %s%s%s%s' % (action, amount, account, description))
+                print('')
+        except TypeError:
+            pass
 
     def ask_deduction_list(self, prompt='Provide a list of deductions to make'):
         """Prompt the user for their list of deductions
@@ -1581,10 +1585,11 @@ if __name__ == "__main__":
             clear_screen()
             app.make_transfer()
         elif action == '5':
-            clear_screen()
             try:
-                app.output_transactions(app.search())
-                raw_input(continue_string)
+                while True:
+                    clear_screen()
+                    app.output_transactions(app.search())
+                    raw_input(continue_string)
             except (budse.CancelException, budse.DoneException):
                 app.status = 'Canceled search'
         elif action == '6':
