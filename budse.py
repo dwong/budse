@@ -332,6 +332,7 @@ class Transaction(Base):
                 filter(Transaction.parent != parent).\
                 filter(Transaction.action != Transaction.TRANSFER).\
                 filter(Transaction.date == date).\
+                filter(Transaction.status == True).\
                 filter(Transaction.amount ==
                        _format_db_amount(amount)).all():
                 duplicates.append(t)
@@ -527,7 +528,7 @@ class Deposit(Transaction):
                 deduction_total += deduction.amount
                 deduction.parent = self
             if self.amount < deduction_total:
-                raise FundsException('Deductions are more than the deposit.')
+                raise FundsException('Deductions are more than the deposit')
         self.deposits = []
         if self.account is None:
             # list of (Account, amount) tuples

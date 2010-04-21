@@ -402,6 +402,7 @@ class BudseCLI(object):
                                         account=account, deductions=deductions)
             except budse.FundsException, e:
                 self.status = str(e)
+                self.session.rollback()
                 return
             else:
                 self.session.add(deposit)
@@ -454,6 +455,7 @@ class BudseCLI(object):
                 self._clear_status()
                 self.status = 'Withdrawal canceled'
         except (budse.CancelException, budse.DoneException):
+            self.session.rollback()
             self._clear_status()
             self.status = 'Withdrawal canceled'
 
@@ -497,6 +499,7 @@ class BudseCLI(object):
                 self._clear_status()
                 self.status = 'Transfer canceled'
         except (budse.CancelException, budse.DoneException):
+            self.session.rollback()
             self._clear_status()
             self.status = 'Transfer canceled'
     
