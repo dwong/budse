@@ -299,7 +299,7 @@ class Transaction(Base):
     __tablename__ = 'transactions'
 
     id = Column('transaction_id', Integer, primary_key=True)
-    _timestamp = Column('timestamp', DateTime, default=func.current_timestamp())
+    _timestamp = Column('timestamp', DateTime, default=datetime.datetime.now())
     date = Column(Date)
     _user = Column('user_id', Integer, ForeignKey('users.user_id'))
     _account = Column('account_id', Integer, ForeignKey('accounts.account_id'))
