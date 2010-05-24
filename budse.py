@@ -333,6 +333,7 @@ class Transaction(Base):
                 filter(Transaction.action != Transaction.TRANSFER).\
                 filter(Transaction.date == date).\
                 filter(Transaction.status == True).\
+                filter(Transaction.account == account).\
                 filter(Transaction.amount ==
                        _format_db_amount(amount)).all():
                 duplicates.append(t)
