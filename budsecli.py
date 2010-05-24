@@ -523,7 +523,7 @@ class BudseCLI(object):
             app.status = 'Transaction %d not reversed' % id
 
     def print_balance(self, account=None, include_user_total=True, 
-                      include_all=False):
+                      include_all=False, include_deactive=False):
         """The balance of a specific account.
 
         Keyword parameters:
@@ -532,7 +532,7 @@ class BudseCLI(object):
             (default True)
         include_all -- Supercedes account parameter and will print out all
             account totals (default False)
-
+        include_deactive -- Include deactivated accounts (default False)
         """
         if account is None:
             totals = []
@@ -540,6 +540,8 @@ class BudseCLI(object):
             longest_total = 4  # length of '0.00'
             user_total = 0.00
             for account in self.user.accounts:
+                if account.status == False and not include_deactive:
+                    continue
                 totals.append((account.name, '%0.2f' % account.total))
                 name_length = len(str(account.name))
                 if name_length > longest_name:
