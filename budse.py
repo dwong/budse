@@ -623,6 +623,7 @@ class Deposit(Transaction):
                 self.deposits.append(deposit)
             
         else:
+            self.amount -= deduction_total
             self.account.total += self.amount
 
     def __str__(self):
