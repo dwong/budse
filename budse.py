@@ -365,27 +365,20 @@ class Transaction(Base):
             return self._status
     def _set_status(self, status):
         if status != self._status:
-            if self.account is not None:
-                reversible_transactions = [self]
-                single_transaction = True
-                account = self.account
-                amount = self.amount
-            else:
-                reversible_transactions = self.children
-                single_transaction = False
-            for transaction in reversible_transactions:
-                if not single_transaction:
-                    account = transaction.account
-                    amount = transaction.amount
-                if account is not None:
-                    if (self.action == Transaction.DEPOSIT and status) or \
-                      (self.action == Transaction.WITHDRAWAL and not status):
-                        account.total += amount
-                    elif(self.action == Transaction.WITHDRAWAL and status) or \
-                      (self.action == Transaction.DEPOSIT and not status):
-                        account.total -= amount
-                self._status = status
+            self._undo_action(status)
+            for t in self.children:
+                t._undo_action(status)
     status = synonym('_status', descriptor=property(_get_status, _set_status))
+
+    def _undo_action(self, status):
+        if self.account is not None:
+            if (self.action == Transaction.DEPOSIT and status) or \
+                   (self.action == Transaction.WITHDRAWAL and not status):
+                self.account.total += self.amount
+            elif(self.action == Transaction.WITHDRAWAL and status) or \
+                   (self.action == Transaction.DEPOSIT and not status):
+                self.account.total -= self.amount
+        self._status = status
 
     def __str__(self):
         """General human-readable transaction string."""
