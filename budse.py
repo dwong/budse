@@ -339,10 +339,10 @@ class Transaction(Base):
                 duplicates.append(t)
             if len(duplicates) > 0:
                 if len(duplicates) == 1:
-                    error = 'Possible duplicate found:%s' % duplicates[0]
+                    error = 'Possible duplicate found'
                 else:
-                    error = 'Possible duplicates found:%s' % duplicates
-                raise DuplicateException(error)
+                    error = 'Possible duplicates found'
+                raise DuplicateException(error, duplicates)
 
     def _set_amount(self, amount):
         self._amount = _format_db_amount(amount)
@@ -444,7 +444,19 @@ class Transfer(Transaction):
     __mapper_args__ = {'polymorphic_identity':Transaction.TRANSFER}
 
     def __init__(self, user, amount, date, to_account, from_account,
-                 description):
+                 description, duplicate_override=False):
+        """A deposit from one account and withdrawal from another.
+
+        Keyword arguments:
+        user -- User
+        amount -- Amount of transaction
+        date -- Transaction date
+        description -- User description of transaction (default None)
+        to_account -- Account to deposit into
+        from_account -- Account to withdraw from
+        duplicate_override -- Do not check for duplicates (default False)
+
+        """
         Transaction.__init__(self, user=user, date=date, 
                              description=description, amount=amount)
         self.description = '[%s -> %s] %s' % (from_account.name,
@@ -454,9 +466,11 @@ class Transfer(Transaction):
         self.from_account = from_account
         session.add(Withdrawal(user=user, amount=amount, date=date,
                                parent=self, description=description,
-                               account=from_account))
+                               account=from_account,
+                               duplicate_override=duplicate_override))
         session.add(Deposit(user=user, amount=amount, date=date, parent=self,
-                            description=description, account=to_account))
+                            description=description, account=to_account,
+                            duplicate_override=duplicate_override))
 
     def __str__(self):
         from_account = session.query(Withdrawal).\
@@ -496,7 +510,8 @@ class Deposit(Transaction):
     __mapper_args__ = {'polymorphic_identity':Transaction.DEPOSIT}
 
     def __init__(self, user, amount, date, description=None,
-                 account=None, deductions=None, parent=None):
+                 account=None, deductions=None, parent=None,
+                 duplicate_override=False):
         """An object representation of a deposit transaction.
 
         Keyword arguments:
@@ -508,6 +523,7 @@ class Deposit(Transaction):
         deductions -- List of Deduction objects (default None)
         parent -- Transaction object that this Deposit is a child of
             (default None)
+        duplicate_override -- Do not check for duplicates (default False)
 
         For a 'whole account' deposit, will perform calculation and
         instantiation of subdeposits that each represent the parts of
@@ -520,7 +536,8 @@ class Deposit(Transaction):
 
         """
         Transaction.__init__(self, user=user, amount=amount, account=account,
-                             description=description, date=date, parent=parent)
+                             description=description, date=date, parent=parent,
+                             duplicate_override=duplicate_override)
         # Calculate deductions
         deduction_total = 0.00
         self.deductions = deductions
@@ -591,21 +608,24 @@ class Deposit(Transaction):
             for account, amount in gross_deposits:
                 deposit = Deposit(user=self.user, amount=amount, parent=self,
                                   date=self.date, account=account, 
-                                  description=self.description)
+                                  description=self.description,
+                                  duplicate_override=duplicate_override)
                 session.add(deposit)
                 self.deposits.append(deposit)
             # Process all (gross and net) fixed amounts at once
             for account, amount in fixed_deposits:
                 deposit = Deposit(user=self.user, amount=account.amount,
                                   date=self.date, account=account, 
-                                  description=self.description, parent=self)
+                                  description=self.description, parent=self,
+                                  duplicate_override=duplicate_override)
                 session.add(deposit)
                 self.deposits.append(deposit)
             # Process remaining with the net percentage accounts
             for account, amount in net_deposits:
                 deposit = Deposit(user=self.user, amount=amount,
                                   date=self.date, account=account,
-                                  description=self.description, parent=self)
+                                  description=self.description, parent=self,
+                                  duplicate_override=duplicate_override)
                 session.add(deposit)
                 self.deposits.append(deposit)
             
@@ -632,7 +652,7 @@ class Withdrawal(Transaction):
     __mapper_args__ = {'polymorphic_identity':Transaction.WITHDRAWAL}
 
     def __init__(self, user, amount, date, description,
-                 account, parent=None):
+                 account, parent=None, duplicate_override=False):
         """An object representation of a withdrawal transaction.
 
         Keyword arguments:
@@ -644,10 +664,12 @@ class Withdrawal(Transaction):
         deductions -- List of Deduction objects (default None)
         parent -- Transaction object that this Deposit is a child of
             (default None)
+        duplicate_override -- Do not check for duplicates (default False)
 
         """
         Transaction.__init__(self, user=user, amount=amount, account=account,
-                             description=description, parent=parent, date=date)
+                             description=description, parent=parent, date=date,
+                             duplicate_override=duplicate_override)
         self.account.total -= self.amount
 
     def __str__(self):
@@ -765,8 +787,9 @@ class FundsException(BudseException):
 
 class DuplicateException(BudseException):
     """Possible duplicate transaction."""
-    def __init__(self, expression):
+    def __init__(self, expression, duplicates):
         self.expression = expression
+        self.duplicates = duplicates
 
     def __str__(self):
         return str(self.expression)

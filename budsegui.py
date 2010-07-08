@@ -522,6 +522,13 @@ class PreferencesDialog(QtGui.QDialog):
         # Username
         self.ui.username.setText(self.user.name)
 
+        # TODO: if not whole_account_actions then do not display amounts
+        #       or types
+
+        # TO TEST: Whole account settings
+        if self.user.whole_account_actions:
+            self.ui.whole_account.setChecked(True)
+
         # TODO keep track of the identity of each row, either adding
         #      a hidden ID or storing the original values in an internal
         #      data structure to compare the result against
@@ -535,46 +542,30 @@ class PreferencesDialog(QtGui.QDialog):
             self.insert_account(row, a.id, a.name, a.affect_gross,
                                 a.percentage_or_fixed, a.amount, a.status)
             row += 1
-#        self.at.resizeRowsToContents()
            
         # Deductions
         self.dt = self.ui.deductionsTable
-        self.dt.setRowCount(len(self.user.deductions))
-#        dt.setColumnCount(3)
-#        dt.setHorizontalHeaderLabels(('Amount', 'Description', ''))
-#        dt.verticalHeader().hide()
+
         row = 0
-        for a, desc in self.user.deductions:
-            # Description
-            twi = QtGui.QTableWidgetItem(desc)
-            twi.setTextAlignment(QtCore.Qt.AlignLeft)
-            self.dt.setItem(row, 0, twi)
-            # Amount
-            twi = MonetaryTableWidgetItem(a)
-            twi.setTextAlignment(QtCore.Qt.AlignRight)
-            self.dt.setItem(row, 1, twi)
-            # Delete
-            b = QtGui.QPushButton('-')
-#            b.setMaximumSize(1, 1)
-            self.dt.setCellWidget(row, 2, b)
+        for a, d in self.user.deductions:
+            self.insert_deduction(row, d, a)
             row += 1
-            # TODO set the size of the horizontal header based on the length of the contents
-        self.dt.resizeRowsToContents()
+
+        # TODO check out doc.trolltech.com/stylesheet-examples.html
+        #      for help with styling (e.g., text-align, width, etc)
 
     def add_account(self):
         self.insert_account(self.at.rowCount(), -1, '', False,
                             budse.Account.PERCENTAGE, 0, True)
 
-    def insert_account(self, row, id, name, gross, account_type, amount,
-                       active):
+    def insert_account(self, row, id, name, gross, acct_type, amount, active):
         nc = 0 # Name column
         vc = 1 # Value column
         tc = 2 # Type column
         gc = 3 # Gross column
         ac = 4 # Active column
 
-        previous_count = self.at.rowCount()
-        self.at.setRowCount(previous_count + 1)
+        self.at.setRowCount(self.at.rowCount() + 1)
 
         # Account
         self.at.setItem(row, nc, QtGui.QTableWidgetItem(name))
@@ -589,7 +580,7 @@ class PreferencesDialog(QtGui.QDialog):
         acct_type = QtGui.QComboBox()
         acct_type.addItem('Percentage', 0)
         acct_type.addItem('Fixed', 1)
-        if account_type == budse.Account.PERCENTAGE:
+        if acct_type == budse.Account.PERCENTAGE:
             twi = PercentageTableWidgetItem(amount)
             acct_type.setCurrentIndex(0)
         else:
@@ -604,17 +595,38 @@ class PreferencesDialog(QtGui.QDialog):
             cb.setChecked(True)
         self.at.setCellWidget(row, ac, cb)
         self.active_group.addButton(cb)
+        # TODO: need the button group or the ID?
 #        self.active_group.setId(cb, id)
         self.at.resizeRowsToContents()
 
     def add_deduction(self):
-        dt = self.ui.deductionsTable
-        dt.setRowCount(dt.rowCount() + 1)
+        self.insert_deduction(self.dt.rowCount(), '', 0)
 
-    def insert_deduction(self, name, amount, active):
-        nc = 0  # Name column
-        ac = 1  # Amount column
-        rc = 2  # Remove column
+    def insert_deduction(self, row, description, amount):
+        dc = 0 # Description column
+        ac = 1 # Amount column
+        rc = 2 # Remove column
+        
+        # TODO right now each row is identified by its description
+        #      is it worth it to make a unique ID so that there can be
+        #      multiple instances of a description and value?
+        
+        self.dt.setRowCount(self.dt.rowCount() + 1)
+        # Description
+#        print(self.dt.size())
+        twi = QtGui.QTableWidgetItem(description)
+        twi.setTextAlignment(QtCore.Qt.AlignLeft)
+#        twi.setSizeHint(QtCore.QSize(50, 10))
+        self.dt.setItem(row, dc, twi)
+        # Amount
+        twi = MonetaryTableWidgetItem(amount)
+        twi.setTextAlignment(QtCore.Qt.AlignHCenter)
+        self.dt.setItem(row, ac, twi)
+        # Delete
+        b = QtGui.QCheckBox()
+        self.dt.setCellWidget(row, rc, b)
+        # TODO set the size of the horizontal header based on the length of the contents
+        self.dt.resizeRowsToContents()
 
     def save(self):
         errors = []
@@ -622,11 +634,13 @@ class PreferencesDialog(QtGui.QDialog):
         # TODO
 
         # loop through accounts
-        #   if it's changed in any way, update the account
-        #   if it's new, insert a new entry (maybe bulk insert)
+        #   if deactivated, set status to False
+        #   else if new, insert a new entry
+        #   else if changed in any way, update the account
         # loop through deductions
-        #   if it's changed, update deduction
-        #   if it's new, insert a new deduction (maybe bulk insert)
+        #   create a new set for deductions
+        #   if removed, do not add
+        #   else add info
 
         if not errors:
             QtGui.QWidget.hide(self)

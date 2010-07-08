@@ -404,25 +404,43 @@ class BudseCLI(object):
                 self.status = str(e)
                 self.session.rollback()
                 return
-            else:
-                self.session.add(deposit)
-                indent = '  '
+            except budse.DuplicateException, e:
                 clear_screen()
-                print('\n==  Deposit Details  ==\n')
-                self.output_transactions([deposit])
-                if self._confirm('Execute deposit?', True):
-                    self.session.commit()
-                    if deposit.account is None:
-                        target = 'Whole Account'
-                    else:
-                        target = deposit.account.name
-                    self.status = ('Successfully made deposit of $%0.2f '
-                                   'into %s' % (deposit.amount, target))
+                if (len(e.duplicates)==1):
+                    plural = ''
                 else:
+                    plural = 's'
+                print('%s:\n== Duplicate%s ==\n' % (e, plural))
+                self.output_transactions(e.duplicates)
+                if self._confirm('Ignore duplicate%s?' % plural, False):
+                    deposit = budse.Deposit(date=date, user=self.user,
+                                       amount=amount, description=description,
+                                       account=account, deductions=deductions,
+                                       duplicate_override=True)
+                else:
+                    self.status = '%s.  Ignoring transaction%s.' % (e, plural)
                     self.session.rollback()
-                    self._clear_status()
-                    self.status = 'Deposit canceled'
+                    return
+
+            self.session.add(deposit)
+            indent = '  '
+            clear_screen()
+            print('\n==  Deposit Details  ==\n')
+            self.output_transactions([deposit])
+            if self._confirm('Execute deposit?', True):
+                self.session.commit()
+                if deposit.account is None:
+                    target = 'Whole Account'
+                else:
+                    target = deposit.account.name
+                self.status = ('Successfully made deposit of $%0.2f '
+                               'into %s' % (deposit.amount, target))
+            else:
+                self.session.rollback()
+                self._clear_status()
+                self.status = 'Deposit canceled'
         except (budse.CancelException, budse.DoneException):
+            self.session.rollback()
             self._clear_status()
             self.status = 'Deposit canceled'
 
@@ -442,19 +460,38 @@ class BudseCLI(object):
             withdrawal = budse.Withdrawal(user=self.user, amount=amount,
                                           date=date, description=description,
                                           account=account)
-            self.session.add(withdrawal)
-            clear_screen()
-            print('\n== Withdrawal Details ==')
-            self.output_transactions([withdrawal])
-            if self._confirm('Execute withdrawal?', True):
-                self.session.commit()
-                self.status = ('Withdrew $%0.2f from %s' %
-                               (withdrawal.amount, withdrawal.account.name))
-            else:
-                self.session.rollback()
-                self._clear_status()
-                self.status = 'Withdrawal canceled'
         except (budse.CancelException, budse.DoneException):
+            self.session.rollback()
+            self._clear_status()
+            self.status = 'Withdrawal canceled'
+            return
+        except budse.DuplicateException, e:
+            clear_screen()
+            if (len(e.duplicates)==1):
+                plural = ''
+            else:
+                plural = 's'
+            print('%s:\n== Duplicate%s ==\n' % (e, plural))
+            self.output_transactions(e.duplicates)
+            if self._confirm('Ignore duplicate%s?' % plural, False):
+                withdrawal = budse.Withdrawal(user=self.user, amount=amount,
+                                           date=date, description=description,
+                                           account=account,
+                                           duplicate_override=True)
+            else:
+                self.status = '%s.  Ignoring transaction%s.' % (e, plural)
+                self.session.rollback()
+                return
+
+        self.session.add(withdrawal)
+        clear_screen()
+        print('\n== Withdrawal Details ==')
+        self.output_transactions([withdrawal])
+        if self._confirm('Execute withdrawal?', True):
+            self.session.commit()
+            self.status = ('Withdrew $%0.2f from %s' %
+                           (withdrawal.amount, withdrawal.account.name))
+        else:
             self.session.rollback()
             self._clear_status()
             self.status = 'Withdrawal canceled'
@@ -485,20 +522,39 @@ class BudseCLI(object):
                                       description=description,
                                       to_account=deposit_account,
                                       from_account=withdrawal_account)
-            clear_screen()
-            print('\n== Transfer Details ==')
-            self.output_transactions([transfer])
-            if self._confirm('Execute transfer?', default=True):
-                self.session.add(transfer)
-                self.session.commit()
-                self.status = ('Transferred %0.2f from %s to %s' %
-                               (transfer.amount, transfer.from_account.name,
-                                transfer.to_account.name))
-            else:
-                self.session.rollback()
-                self._clear_status()
-                self.status = 'Transfer canceled'
         except (budse.CancelException, budse.DoneException):
+            self.session.rollback()
+            self._clear_status()
+            self.status = 'Transfer canceled'
+        except budse.DuplicateException, e:
+            clear_screen()
+            if (len(e.duplicates)==1):
+                plural = ''
+            else:
+                plural = 's'
+            print('%s:\n== Duplicate%s ==\n' % (e, plural))
+            self.output_transactions(e.duplicates)
+            if self._confirm('Ignore duplicate%s?' % plural, False):
+                transfer = budse.Transfer(user=self.user, amount=amount,
+                                          date=date, description=description,
+                                          to_account=deposit_account,
+                                          from_account=withdrawal_account,
+                                          duplicate_override=True)
+            else:
+                self.status = '%s.  Ignoring transaction%s.' % (e, plural)
+                self.session.rollback()
+                return
+
+        clear_screen()
+        print('\n== Transfer Details ==')
+        self.output_transactions([transfer])
+        if self._confirm('Execute transfer?', default=True):
+            self.session.add(transfer)
+            self.session.commit()
+            self.status = ('Transferred %0.2f from %s to %s' %
+                           (transfer.amount, transfer.from_account.name,
+                            transfer.to_account.name))
+        else:
             self.session.rollback()
             self._clear_status()
             self.status = 'Transfer canceled'
