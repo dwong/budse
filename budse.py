@@ -567,10 +567,11 @@ class Deposit(Transaction):
             for account in filter_accounts(self.user.accounts, fixed=False,
                                            gross=True):
                 amount = gross * account.amount
-                leftover += amount - round(amount, 2)
-                amount = round(amount, 2)
-                running_total -= amount
-                gross_deposits.append((account, amount))
+                if amount > 0:
+                    leftover += amount - round(amount, 2)
+                    amount = round(amount, 2)
+                    running_total -= amount
+                    gross_deposits.append((account, amount))
             # Execute deductions
             running_total -= deduction_total
             # Calculate fixed deposits
@@ -578,7 +579,8 @@ class Deposit(Transaction):
                                            percentage=False):
                 if running_total > 0:
                     running_total -= account.amount
-                    fixed_deposits.append((account, account.amount))
+                    if account.amount > 0:
+                        fixed_deposits.append((account, account.amount))
                 else:
                     raise FundsException('Insufficient funds for whole account'
                                          ' deposit')
@@ -588,10 +590,11 @@ class Deposit(Transaction):
                 for account in filter_accounts(self.user.accounts, fixed=False,
                                                gross=False):
                     amount = net * account.amount
-                    leftover += amount - round(amount, 2)
-                    amount = round(amount, 2)
-                    running_total -= amount
-                    net_deposits.append((account, amount))
+                    if amount > 0:
+                        leftover += amount - round(amount, 2)
+                        amount = round(amount, 2)
+                        running_total -= amount
+                        net_deposits.append((account, amount))
                 else:
                     account, amount = net_deposits.pop()
                     amount += round(leftover, 2)
