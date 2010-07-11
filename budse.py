@@ -66,6 +66,64 @@ class UpperComparator(ColumnProperty.Comparator):
         return func.upper(self.__clause_element__()) == func.upper(other)
 
 ########
+# Amusement
+########
+# Just what it's named, a whole lot of fun stuff
+fun = ('Non-Sequiturs Rule The Day', 'GTWW',
+       "Always choose danger (unless it's actually dangerous)",
+       'Monty said to Python, "G\'day, Ate"',
+       'Save the money, save the world', 'Never discount',
+       'Debt me my forgive', 'I do not worship the BDFL',
+       "If awesome say, 'Aye'", 'Ouch, that hurt!',
+       'I go that way', 'BAM POW ZAP', 'Zimminee Zammanee Zoo',
+       'I choose YOU', 'Mozart was short and ugly',
+       'I am your Budse',
+       "I'll never let go of you.  I promise.",
+       'Give me your money, and you can exit in peace',
+       "Well I say, I've never thought that before!",
+       'Watch out for one-eyed Willie', 'HEY YOU GUYYYS',
+       'I want to eat your M-O-N-E-Y', 'FTOAYW',
+       "If you're not careful, you can poke an eye out.",
+       'Spam for me, eggs for you', '16 TON WEIGHT',
+       'Psst, Robinson Crusoe never made it out',
+       'John Cleese, please', 'Terry Merry Berry Gilliam',
+       'Graham Chapman graham crackers', "I'll Idle your Eric",
+       'Michael Palin For Prez 2000', 'Oh Terry Jones, behave!',
+       'And now for something completely different',
+       'Keeping up with the 4th Ave', 'The symphonies of LA',
+       'The circus already flew over the coop',
+       'Spam spam spam spam spam spam spam spam spam',
+       'DWYW, IDC', 'To us do your base belong', 'Fear the pear',
+       "Hey buddy, won't you be my Budse?", 'FREE HUGS!',
+       'I am the slap bet commissioner', 'It was a pleasure',
+       'I want you to draw me like one of your French girls',
+       "Southwest Women's Adventure Group",
+       'Let us play the beautiful game',
+       "I'm the Budse of the world!", 'Robert loved Raymond',
+       'Frank smells', 'FTW',
+       'Q: How far to your house?\n'
+       'A: Pianos',
+       'Kinder chocolate', 'Andiamo', 'Get yourselves together',
+       'The smallest Can hates us',
+       'This is the silliest sketch ever', 'I <3 anagrams',
+       'Wakey wakey', "That's amazing.  So much love and "
+       "also so much information",
+       "I'm gonna go upstairs and pay a visit to the shower "
+       "fairy", 'Q: You a pothead, Focker?\n'
+       'A: No I pass on grass always.  Well not always.',
+       'You never told me about your cat milking days in Motown',
+       "OK, well don't you think that the Samsonite people, "
+       "in some crazy scheme in order to make a profit,\n"
+       "MADE MORE THAN ONE BLACK SUITCASE?",
+       'Bingo, Bango, Bongo!', "They'll never take...OUR FREEDOM",
+       'Ego nunquam pronunciari mendacium! Sed ego sum '
+       'homo indomitus',
+       'Q: What is your name?\n'
+       'A: My name is Gladiat..., err Budse',
+       'Did you really just buy that?', 'Strength and honor'
+       )
+
+########
 # CLASSES
 ########
 class Account(Base):

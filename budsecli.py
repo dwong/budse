@@ -2,7 +2,7 @@
 # BUDget for Spam and Eggs (Budse)
 #
 # Version:
-#     1.0
+#     1.001
 #
 # Description:
 #     Budse with a Command Line Interface (CLI)
@@ -27,6 +27,7 @@ from sqlalchemy.orm.exc import NoResultFound, MultipleResultsFound
 from sqlalchemy import desc, or_
 import datetime
 import os
+import random
 
 class BudseCLI(object):
     """Command Line Interface for Budse."""
@@ -196,7 +197,7 @@ class BudseCLI(object):
             try:
                 amount = self._handle_input(prompt, type)
             except budse.ConversionException:
-                print 'Invalid value'
+                print 'Invalid value - %s' % random.choice(budse.fun)
         # Only keep 2 decimal places of precision for these floats
         if type==float:
             return round(amount, 2)
@@ -348,7 +349,7 @@ class BudseCLI(object):
                     deductions = []
                     status = 'Deductions cleared'
                 else:
-                    status = 'Invalid choice'
+                    status = 'Invalid choice - %s' % random.choice(budse.fun)
             full_list = 'Deductions:\n'
             if deductions:
                 for amount, description in deductions:
@@ -640,7 +641,7 @@ class BudseCLI(object):
                 # TODO add Excel report using pyExcelerator
                 # TODO account report for dates
                 else:
-                    self.status = 'Invalid choice'
+                    self.status = 'Invalid choice - %s' % random.choice(budse.fun)
             except (budse.CancelException, budse.DoneException):
                 self.status = 'Report canceled'
                 return
@@ -768,7 +769,7 @@ class BudseCLI(object):
                     else:
                         filepath = os.path.join(path, name)
                 else:
-                    print('Invalid path')
+                    print('Invalid path - %s' % random.choice(budse.fun))
         return filepath
 
     def modify_user_settings(self):
@@ -804,7 +805,7 @@ class BudseCLI(object):
                 elif action == '6':
                     self.modify_user_whole(self.user)
                 else:
-                    self.status = 'Invalid action'
+                    self.status = 'Invalid action - %s' % random.choice(budse.fun)
                 self.session.commit()
             except budse.CancelException:
                 self._clear_status()
@@ -950,12 +951,12 @@ class BudseCLI(object):
                         status = 'Deduction deleted'
                         deductions_changed = True
                 else:
-                    status = 'Invalid Choice'
+                    status = 'Invalid Choice - %s' % random.choice(budse.fun)
             except (budse.CancelException, budse.DoneException):
                 status = 'Canceled action'
                 continue
             except ValueError:
-                status = 'Invalid Choice'
+                status = 'Invalid Choice - %s' % random.choice(budse.fun)
                 continue
         if deductions_changed:
             self.status = 'Deductions modified'
@@ -1026,7 +1027,7 @@ class BudseCLI(object):
                     self.modify_account_gross(account)
                     check_reconfiguration = True
                 else:
-                    self.status = 'Invalid action'
+                    self.status = 'Invalid action - %s' % random.choice(budse.fun)
                 self.session.commit()
                 if check_reconfiguration and self.user.whole_account_actions:
                     if self.reconfigure_accounts(self.user.accounts):
@@ -1123,7 +1124,7 @@ class BudseCLI(object):
                     type_modified = True
                     self.status = "'%s' is now a fixed account" % account.name
                 else:
-                    status = 'Invalid choice'
+                    status = 'Invalid choice - %s' % random.choice(budse.fun)
         if not type_modified:
             self.status = 'Kept existing type'
         else:
@@ -1223,7 +1224,7 @@ class BudseCLI(object):
                     gross_modified = True
                     self.status = "'%s' now affects the net" % account.name
                 else:
-                    status = 'Invalid choice'
+                    status = 'Invalid choice - %s' % random.choice(budse.fun)
         if not gross_modified:
             self.status = 'Kept existing setting for affecting the gross amount'
 
@@ -1260,9 +1261,9 @@ class BudseCLI(object):
                 if index >= 0 and index < len(accounts):
                     account = accounts[index]
                 else:
-                    print('Invalid choice')
+                    print('Invalid choice - %s' % random.choice(budse.fun))
             except budse.ConversionException:
-                print('Invalid choice')
+                print('Invalid choice - %s' % random.choice(budse.fun))
         return account
 
     def _transact_for_whole_account(self, default=False):
@@ -1326,7 +1327,7 @@ class BudseCLI(object):
                         status = ("'%s' modified" %
                                   (gross_percentage[choice].name))
                 else:
-                    status = 'Invalid choice'
+                    status = 'Invalid choice - %s' % random.choice(budse.fun)
             except (budse.CancelException, budse.DoneException):
                 status = 'Canceled change, continue to reconfigure'
             gross_reconfig, trash = budse._require_reconfiguration(
@@ -1382,7 +1383,7 @@ class BudseCLI(object):
                             status = ("'%s' modified" %
                                       (net_percentage[choice].name))
                     else:
-                        status = 'Invalid choice'
+                        status = 'Invalid choice - %s' % random.choice(budse.fun)
                 except (budse.CancelException, budse.DoneException):
                     status = 'Canceled change, continue to reconfigure'
             trash, net_reconfig = budse._require_reconfiguration(
@@ -1664,5 +1665,5 @@ if __name__ == "__main__":
         elif action == '8':
             app.modify_user_settings()
         else:
-            app.status = 'Invalid action'
+            app.status = 'Invalid action - %s' % random.choice(budse.fun)
         clear_screen()
