@@ -527,6 +527,7 @@ class BudseCLI(object):
             self.session.rollback()
             self._clear_status()
             self.status = 'Transfer canceled'
+            return
         except budse.DuplicateException, e:
             clear_screen()
             if (len(e.duplicates)==1):
