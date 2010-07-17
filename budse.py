@@ -524,16 +524,26 @@ class Transfer(Transaction):
                             duplicate_override=duplicate_override))
 
     def __str__(self):
-        from_account = session.query(Withdrawal).\
-                       filter(Withdrawal.parent == self).one().account
-        to_account = session.query(Deposit).\
-                     filter(Deposit.parent == self).one().account
-        return('Type%s Transfer%sAmount%s $%0.2f%sTransaction Date%s %s%sAccou'
-               'nt From%s %s%sAccount To%s %s%sDescription%s %s%sActive%s %s' %
-               (tag_delimiter, str_delimiter, tag_delimiter, self.amount,
-                str_delimiter, tag_delimiter,  self.date.strftime('%m/%d/%Y'),
-                str_delimiter,tag_delimiter, from_account.name, str_delimiter,
-                tag_delimiter, to_account.name, str_delimiter, tag_delimiter,
+        try:
+            from_account = session.query(Withdrawal).\
+                           filter(Withdrawal.parent == self).one().account
+            to_account = session.query(Deposit).\
+                         filter(Deposit.parent == self).one().account
+        except NoResultFound:
+            return('Type%s INVALID Transfer%sAmount%s $%0.2f%sTransaction Date'
+                '%s %s%sDescription%s %s%sActive%s %s' %
+                (tag_delimiter, str_delimiter, tag_delimiter,
+                 self.amount, str_delimiter, tag_delimiter,
+                 self.date.strftime('%m/%d/%Y'), str_delimiter,tag_delimiter,
+                 self.description, str_delimiter, tag_delimiter, self.status))
+        else:
+            return('Type%s Transfer%sAmount%s $%0.2f%sTransaction Date%s %s%s'
+                'Account From%s %s%sAccount To%s %s%sDescription%s %s%sActive'
+                '%s %s' % (tag_delimiter, str_delimiter, tag_delimiter,
+                self.amount, str_delimiter, tag_delimiter,
+                self.date.strftime('%m/%d/%Y'), str_delimiter,tag_delimiter,
+                from_account.name, str_delimiter, tag_delimiter,
+                to_account.name, str_delimiter, tag_delimiter,
                 self.description, str_delimiter, tag_delimiter, self.status))
 
         
