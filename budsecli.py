@@ -331,6 +331,8 @@ class BudseCLI(object):
                     choice = self._ask_string(prompt)
                 except budse.DoneException:
                     break
+                except budse.CancelException:
+                    continue
                 if choice == '1':
                     amount = self._ask_amount()
                     description = self._ask_string()
