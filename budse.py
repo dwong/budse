@@ -572,7 +572,7 @@ class Deposit(Transaction):
 
     def __init__(self, user, amount, date, description=None,
                  account=None, deductions=None, parent=None,
-                 duplicate_override=False):
+                 duplicate_override=False, accounts=None):
         """An object representation of a deposit transaction.
 
         Keyword arguments:
@@ -585,17 +585,29 @@ class Deposit(Transaction):
         parent -- Transaction object that this Deposit is a child of
             (default None)
         duplicate_override -- Do not check for duplicates (default False)
+        accounts -- List of Account objects (default None), new method
+            of depositing into multiple accounts (vs passing account=None)
 
+        (deprecated)
         For a 'whole account' deposit, will perform calculation and
         instantiation of subdeposits that each represent the parts of
         the whole deposit.
 
-        When broken down, this results in a loop each for:
+        (current)
+        Whole account deposits are not always desirable so the caller
+        can pass a list of Account objects using the 'accounts' parameter.
+        Usage of this parameter will supercede anything done with the
+        'account' parameter.
+
+        When a multiple account deposit is broken down:
         1) Percentage amounts on the gross
         2) Fixed amounts
         3) Percentage amounts on the net
 
         """
+        if accounts is not None:
+            account = None
+
         Transaction.__init__(self, user=user, amount=amount, account=account,
                              description=description, date=date, parent=parent,
                              duplicate_override=duplicate_override)
@@ -615,13 +627,15 @@ class Deposit(Transaction):
             fixed_deposits = []
             net_deposits = []
 
+            # Old way assumes always doing whole account deposit
+            if accounts is None:
+                accounts = self.user.accounts
+
             # Calculate minimum deposit for error message
             minimum_deposit = deduction_total
-            for account in filter_accounts(self.user.accounts, fixed=False,
-                                           gross=True):
+            for account in filter_accounts(accounts, fixed=False, gross=True):
                 minimum_deposit += self.amount * account.amount
-            for account in filter_accounts(self.user.accounts,
-                                           percentage=False):
+            for account in filter_accounts(accounts, percentage=False):
                 minimum_deposit += account.amount
 
             if self.amount <= minimum_deposit:
@@ -632,8 +646,7 @@ class Deposit(Transaction):
             leftover = 0.00
             gross = running_total = self.amount
             # Calculate gross deposits
-            for account in filter_accounts(self.user.accounts, fixed=False,
-                                           gross=True):
+            for account in filter_accounts(accounts, fixed=False, gross=True):
                 amount = gross * account.amount
                 if amount > 0:
                     leftover += amount - round(amount, 2)
@@ -643,8 +656,7 @@ class Deposit(Transaction):
             # Execute deductions
             running_total -= deduction_total
             # Calculate fixed deposits
-            for account in filter_accounts(self.user.accounts,
-                                           percentage=False):
+            for account in filter_accounts(accounts, percentage=False):
                 if running_total > 0:
                     running_total -= account.amount
                     if account.amount > 0:
@@ -655,7 +667,7 @@ class Deposit(Transaction):
             # Calculate net deposits
             if running_total > 0:
                 net = running_total
-                for account in filter_accounts(self.user.accounts, fixed=False,
+                for account in filter_accounts(accounts, fixed=False,
                                                gross=False):
                     amount = net * account.amount
                     if amount > 0:
