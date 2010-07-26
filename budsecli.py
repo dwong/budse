@@ -684,6 +684,7 @@ class BudseCLI(object):
                 filter(budse.Transaction.date >= begin_date).\
                 filter(budse.Transaction.date <= end_date).\
                 filter(budse.Transaction.parent == None).\
+                filter(budse.Transaction.status == True).\
                 order_by(budse.Transaction.date).all()
             # dict of (account name, deposits, withdrawals, net change) tuples
             account_summary = {} 
