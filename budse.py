@@ -366,7 +366,7 @@ class Transaction(Base):
     action = Column(String)
     _parent = Column('root_transaction_id', Integer,
                      ForeignKey('transactions.transaction_id'))
-    _status = Column('status', Boolean, default=True)
+    _status = Column('status', Boolean, default=False)
     __mapper_args__ = {'polymorphic_on':action,
                        'polymorphic_identity':INFORMATIONAL}
 
@@ -387,7 +387,8 @@ class Transaction(Base):
         if not duplicate_override:
             duplicates = []
             for t in session.query(Transaction).\
-                filter(Transaction.parent != parent).\
+                filter(or_(Transaction.parent != parent,
+                           Transaction.parent == None)).\
                 filter(Transaction.action != Transaction.TRANSFER).\
                 filter(Transaction.date == date).\
                 filter(Transaction.status == True).\

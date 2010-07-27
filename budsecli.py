@@ -425,12 +425,12 @@ class BudseCLI(object):
                     self.session.rollback()
                     return
 
-            self.session.add(deposit)
-            indent = '  '
             clear_screen()
             print('\n==  Deposit Details  ==\n')
             self.output_transactions([deposit])
             if self._confirm('Execute deposit?', True):
+                deposit.status = True
+                self.session.add(deposit)
                 self.session.commit()
                 if deposit.account is None:
                     target = 'Whole Account'
@@ -486,11 +486,12 @@ class BudseCLI(object):
                 self.session.rollback()
                 return
 
-        self.session.add(withdrawal)
         clear_screen()
         print('\n== Withdrawal Details ==')
         self.output_transactions([withdrawal])
         if self._confirm('Execute withdrawal?', True):
+            withdrawal.status = True
+            self.session.add(withdrawal)
             self.session.commit()
             self.status = ('Withdrew $%0.2f from %s' %
                            (withdrawal.amount, withdrawal.account.name))
@@ -553,6 +554,7 @@ class BudseCLI(object):
         print('\n== Transfer Details ==')
         self.output_transactions([transfer])
         if self._confirm('Execute transfer?', default=True):
+            transfer.status = True
             self.session.add(transfer)
             self.session.commit()
             self.status = ('Transferred %0.2f from %s to %s' %
