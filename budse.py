@@ -374,6 +374,7 @@ class Transaction(Base):
     account = relation('Account', backref=backref('transactions', order_by=id))
     children = relation('Transaction', primaryjoin=_parent == id, cascade='all',
                         backref=backref('parent', remote_side=id))
+    initial = False
 
     def __init__(self, date, user, description=None, amount=0.00, account=None,
                  parent=None, duplicate_override=False):
@@ -383,6 +384,7 @@ class Transaction(Base):
         self.amount = amount
         self.description = description
         self.parent = parent
+        self.initial = True
 
         if not duplicate_override:
             duplicates = []
@@ -417,7 +419,6 @@ class Transaction(Base):
                                                 ts.hour, ts.minute, ts.second))
 
     def _get_status(self):
-        # TODO: don't display True for an unsaved transaction
         if self._status is None:
             return 'Unsaved'
         else:
@@ -430,7 +431,7 @@ class Transaction(Base):
     status = synonym('_status', descriptor=property(_get_status, _set_status))
 
     def _undo_action(self, status):
-        if self.account is not None:
+        if self.account is not None and not self.initial:
             if (self.action == Transaction.DEPOSIT and status) or \
                    (self.action == Transaction.WITHDRAWAL and not status):
                 self.account.total += self.amount
