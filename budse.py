@@ -392,6 +392,8 @@ class Transaction(Base):
                 filter(or_(Transaction.parent != parent,
                            Transaction.parent == None)).\
                 filter(Transaction.action != Transaction.TRANSFER).\
+                filter(Transaction.action != Transaction.DEDUCTION).\
+                filter(Transaction.action != Transaction.INFORMATIONAL).\
                 filter(Transaction.date == date).\
                 filter(Transaction.status == True).\
                 filter(Transaction.account == account).\
