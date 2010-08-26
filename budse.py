@@ -418,6 +418,21 @@ class Transaction(Base):
         return('%s-%02d-%02d %02d:%02d:%02d' % (ts.year, ts.month, ts.day,
                                                 ts.hour, ts.minute, ts.second))
 
+    def commit(self):
+        """Only used for the first save to the database."""
+        print('%s' % self.initial)
+        if not self._status:
+            if self.parent is None and self.initial:
+                self._status = True
+                self.initial = False
+                for t in self.children:
+                    t.commit()
+            else: # This comes from the transaction's parent
+                self._status = True
+                for t in self.children: # Maybe support multiple nesting in the future?
+                    t.commit()
+                
+
     def _get_status(self):
         if self._status is None:
             return 'Unsaved'
@@ -431,7 +446,7 @@ class Transaction(Base):
     status = synonym('_status', descriptor=property(_get_status, _set_status))
 
     def _undo_action(self, status):
-        if self.account is not None and not self.initial:
+        if self.account is not None:
             if (self.action == Transaction.DEPOSIT and status) or \
                    (self.action == Transaction.WITHDRAWAL and not status):
                 self.account.total += self.amount
