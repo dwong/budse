@@ -420,7 +420,6 @@ class Transaction(Base):
 
     def commit(self):
         """Only used for the first save to the database."""
-        print('%s' % self.initial)
         if not self._status:
             if self.parent is None and self.initial:
                 self._status = True
