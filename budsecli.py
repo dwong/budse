@@ -1260,9 +1260,9 @@ class BudseCLI(object):
         status = ''
         while not done:
             clear_screen()
-            print('Account List Dialog')
+            print('Account List Dialog\n')
             if len(accounts):
-                print('Account%s selected:(name, amount and type)' %
+                print('Account%s selected (name, amount and type):' %
                       ('s' if len(accounts) > 1 else ''))
                 for i, (a, ag, pf, amt) in zip(range(len(accounts)), accounts):
                     print('%d - (%s, %s)' %
@@ -1543,16 +1543,18 @@ class BudseCLI(object):
                                                 gross_percentage):
                 prompt += ('%d - %s (%0.2f%%)\n' %
                            ((index+1), a.name, budse._format_db_amount(amt)))
-                total += budse._format_db_amount(amt)
+                total += budse._format_out_amount(amt)
             prompt += 'Total: %0.2f\n%s\nModify: ' % (total, status)
             status = ''
             try:
                 choice = self._ask_amount(prompt, int) - 1 # Pretty index
                 if choice >= 0 and choice < len(gross_percentage):
-                    amount = self._ask_amount()
+                    amount = budse._format_out_amount(self._ask_amount())
                     (a, ag, pf, amt) = gross_percentage.pop(choice)
                     if self._confirm(("Use %0.2f for '%sn'" %
-                                      (amount, a.name)), default=True):
+                                      (budse._format_db_amount(amount),
+                                       a.name)),
+                                     default=True):
                         gross_percentage.insert(choice, (a, ag, pf, amount))
                         status = ("'%s' modified" % a.name)
                 else:
@@ -1562,6 +1564,7 @@ class BudseCLI(object):
             gross_reconfig, trash = budse._harmless_require_reconfiguration(
                 gross_percentage, check_net=False, active_only=active_only)
         while net_reconfig:
+#TODO testing here, require reconfig broken
             if len(net_percentage) == 0:
                 print('You need at least one net percentage account if you '
                       'want to do whole account actions')
@@ -1581,10 +1584,12 @@ class BudseCLI(object):
                 try:
                     choice = self._ask_amount(prompt, int) - 1 # Pretty index
                     if choice >= 0 and choice < len(net_percentage):
-                        amount = self._ask_amount()
+                        amount = budse._format_out_amount(self._ask_amount())
                         (a, ag, pf, amt) = net_percentage.pop(choice)
                         if self._confirm(("Use %0.2f for '%s'" %
-                                          (amount, a.name)), default=True):
+                                          (budse._format_db_amount(amount),
+                                           a.name)),
+                                         default=True):
                             net_percentage.insert(choice, (a, ag, pf, amount))
                             status = ("'%s' modified" % a.name)
                     else:
