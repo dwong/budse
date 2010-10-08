@@ -668,16 +668,15 @@ class Deposit(Transaction):
                     minimum_deposit += amount
                     fixed_accounts.append((a, amount))
                 # Percentage, gross
-                elif (affect_gross and
-                      percentage_or_fixed == Account.PERCENTAGE):
-                    minimum_deposit += self.amount * (amount * .01)# TODO TESTING HERE
+                elif affect_gross:
+                    minimum_deposit += self.amount * amount
                     gross_accounts.append((a, amount))
                 else:
                     net_accounts.append((a, amount))
             
             if self.amount <= minimum_deposit:
                 raise FundsException('Insufficient funds for whole account'
-                                     ' deposit.  (Minimum %0.2f)' %
+                                     ' deposit.  (Minimum $%0.2f)' %
                                      minimum_deposit)
 
             leftover = 0.00
@@ -946,19 +945,14 @@ def _harmless_require_reconfiguration(accounts, check_gross=True,
         total = 0
         for (a, ag, pf, amt) in harmless_filter_accounts(accounts, gross=False,
                                     fixed=False, active_only=active_only):
-            if debug:
-                print('Amount %d changes to %d' %
-                      (amt, _format_db_amount(amt, 100000)))
-            total += _format_db_amount(amt, 100000)
-        if debug:
-            print('Calculated total %d (compared to 10000)' % total)
-        if total != 100000:
+            total += _format_db_amount(amt)
+        if total != 10000:
             net_reconfiguration = True
     return gross_reconfiguration, net_reconfiguration
 
 
-def _format_db_amount(amount, multiplier=100):
-    return int(round(float(amount) * multiplier))
+def _format_db_amount(amount):
+    return int(round(float(amount) * 100))
 
 def _format_out_amount(amount, divisor=100):
     return float(amount) / divisor

@@ -1266,13 +1266,11 @@ class BudseCLI(object):
                       ('s' if len(accounts) > 1 else ''))
                 for i, (a, ag, pf, amt) in zip(range(len(accounts)), accounts):
                     print('%d - (%s, %s)' %
-                          (i+1, a.name, (('%d%% of gross' %
-                                          budse._format_db_amount(amt))
+                          (i+1, a.name, (('%0.2f%% of gross' % amt)
                                          if ag
-                                         else ('%d%% of net' %
-                                               budse._format_db_amount(amt)))
+                                         else ('%0.2f%% of net' % amt))
                                         if pf == budse.Account.PERCENTAGE
-                                        else ('$%d' % amt)))
+                                        else ('$%0.2f' % amt)))
             output_prompt = ('Actions:\na - Add account\nr - '
                              'Remove account \nso - Start Over'
                              '\n%s\n%s\nInput: ' %
@@ -1312,8 +1310,6 @@ class BudseCLI(object):
                                              ('gross' if ag else 'net'))
                                             if pf == budse.Account.PERCENTAGE
                                             else 'Dollar amount taken from'))
-                    if pf == budse.Account.PERCENTAGE:
-                        amt = budse._format_out_amount(amt)
                     accounts.append((a, ag, pf, amt))
                     excluded_accts.append(a.id)
                 elif choice.startswith('R'):
@@ -1321,7 +1317,8 @@ class BudseCLI(object):
                     if index >= 0 and index < len(accounts):
                         excluded_accts.remove(accounts.pop(index)[0].id)
                     else:
-                        status = 'Invalid choice - %s' % random.choice(budse.fun)
+                        status = ('Invalid choice - %s' %
+                                  random.choice(budse.fun))
                         continue
                 elif choice == 'SO':
                     accounts = []
@@ -1338,7 +1335,13 @@ class BudseCLI(object):
                 status = 'Invalid choice - %s' % random.choice(budse.fun)
             except budse.ParameterException:
                 pass
-        return self.harmless_reconfigure_accounts(accounts)
+        formatted_accounts = []
+        for (a, ag, pf, amt) in self.harmless_reconfigure_accounts(accounts):
+            if pf == budse.Account.PERCENTAGE:
+                amt = budse._format_out_amount(amt)
+            formatted_accounts.append((a, ag, pf, amt))
+        return formatted_accounts
+
 
     def _ask_account(self, prompt='Perform transaction using which account: ',
                      active_only=True, exclude_accounts=[]):
@@ -1526,8 +1529,6 @@ class BudseCLI(object):
         gross_reconfig, net_reconfig = \
             budse._harmless_require_reconfiguration(accounts,
                                                     active_only=active_only)
-#TODO use new account amounts (i.e., percent amounts are div by 100)
-
         if not gross_reconfig and not net_reconfig:
             return False
         gross_percentage = budse.harmless_filter_accounts(accounts, gross=True,
@@ -1541,20 +1542,17 @@ class BudseCLI(object):
             total = 0.00
             for index, (a, ag, pf, amt) in zip(range(len(gross_percentage)),
                                                 gross_percentage):
-                prompt += ('%d - %s (%0.2f%%)\n' %
-                           ((index+1), a.name, budse._format_db_amount(amt)))
-                total += budse._format_out_amount(amt)
+                prompt += ('%d - %s (%0.2f%%)\n' % ((index+1), a.name, amt))
+                total += amt
             prompt += 'Total: %0.2f\n%s\nModify: ' % (total, status)
             status = ''
             try:
                 choice = self._ask_amount(prompt, int) - 1 # Pretty index
                 if choice >= 0 and choice < len(gross_percentage):
-                    amount = budse._format_out_amount(self._ask_amount())
+                    amount = self._ask_amount()
                     (a, ag, pf, amt) = gross_percentage.pop(choice)
                     if self._confirm(("Use %0.2f for '%sn'" %
-                                      (budse._format_db_amount(amount),
-                                       a.name)),
-                                     default=True):
+                                      (amount, a.name)), default=True):
                         gross_percentage.insert(choice, (a, ag, pf, amount))
                         status = ("'%s' modified" % a.name)
                 else:
@@ -1564,7 +1562,6 @@ class BudseCLI(object):
             gross_reconfig, trash = budse._harmless_require_reconfiguration(
                 gross_percentage, check_net=False, active_only=active_only)
         while net_reconfig:
-#TODO testing here, require reconfig broken
             if len(net_percentage) == 0:
                 print('You need at least one net percentage account if you '
                       'want to do whole account actions')
@@ -1576,20 +1573,17 @@ class BudseCLI(object):
                 for index, (a, ag, pf, amt) in zip(range(len(net_percentage)),
                                                    net_percentage):
                     prompt += ('%d - %s (%0.2f%%)\n' %
-                               ((index+1), a.name,
-                                budse._format_db_amount(amt)))
-                    total += budse._format_db_amount(amt)
+                               ((index+1), a.name, amt))
+                    total += amt
                 prompt += 'Total: %0.2f\n%s\nModify: ' % (total, status)
                 status = ''
                 try:
                     choice = self._ask_amount(prompt, int) - 1 # Pretty index
                     if choice >= 0 and choice < len(net_percentage):
-                        amount = budse._format_out_amount(self._ask_amount())
+                        amount = self._ask_amount()
                         (a, ag, pf, amt) = net_percentage.pop(choice)
                         if self._confirm(("Use %0.2f for '%s'" %
-                                          (budse._format_db_amount(amount),
-                                           a.name)),
-                                         default=True):
+                                          (amount, a.name)), default=True):
                             net_percentage.insert(choice, (a, ag, pf, amount))
                             status = ("'%s' modified" % a.name)
                     else:
