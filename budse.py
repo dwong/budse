@@ -683,6 +683,8 @@ class Deposit(Transaction):
             gross = running_total = self.amount
             # Calculate gross deposits
             for (a, amt) in gross_accounts:
+                if debug:
+                    print('%s' % a)
                 amount = gross * amt
                 if amount > 0:
                     leftover += amount - round(amount, 2)
@@ -730,7 +732,7 @@ class Deposit(Transaction):
                 self.deposits.append(deposit)
             # Process all (gross and net) fixed amounts at once
             for account, amount in fixed_deposits:
-                deposit = Deposit(user=self.user, amount=account.amount,
+                deposit = Deposit(user=self.user, amount=amount,
                                   date=self.date, account=account, 
                                   description=self.description, parent=self,
                                   duplicate_override=duplicate_override)

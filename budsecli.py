@@ -2,7 +2,7 @@
 # BUDget for Spam and Eggs (Budse)
 #
 # Version:
-#     1.001
+#     0.4
 #
 # Description:
 #     Budse with a Command Line Interface (CLI)
@@ -1531,6 +1531,11 @@ class BudseCLI(object):
                                                     active_only=active_only)
         if not gross_reconfig and not net_reconfig:
             return False
+        if budse.debug:
+            for (a, ag, pf, amt) in accounts:
+                print('%s' % a)
+        fixed = budse.harmless_filter_accounts(accounts, fixed=True,
+                                     percentage=False, active_only=active_only)
         gross_percentage = budse.harmless_filter_accounts(accounts, gross=True,
                                           fixed=False, active_only=active_only)
         net_percentage = budse.harmless_filter_accounts(accounts, gross=False,
@@ -1563,9 +1568,13 @@ class BudseCLI(object):
                 gross_percentage, check_net=False, active_only=active_only)
         while net_reconfig:
             if len(net_percentage) == 0:
-                print('You need at least one net percentage account if you '
-                      'want to do whole account actions')
-                # TODO if no net percentage account
+                excluded = []
+                for (a, ag, pf, amt) in accounts:
+                    excluded.append(a.id)
+                a = self._ask_account(prompt='Choose one account for all of '
+                                      'the net: ', exclude_accounts=excluded)
+                net_percentage.append((a, False, budse.Account.PERCENTAGE,
+                                      100.00))
             else:
                 prompt = ('Reconfigure Account Amounts\n\nModify the '
                           'net percentage accounts to exactly 100%\n')
@@ -1591,8 +1600,12 @@ class BudseCLI(object):
                 except (budse.CancelException, budse.DoneException):
                     status = 'Canceled change, continue to reconfigure'
             trash, net_reconfig = budse._harmless_require_reconfiguration(
-                net_percentage, check_gross=False, active_only=active_only)
-        return gross_percentage + net_percentage
+                net_percentage, check_gross=False, active_only=active_only)        
+        final = gross_percentage + net_percentage + fixed
+        if budse.debug:
+            for (a, ag, pf, amt) in final:
+                print('%s' % a)
+        return final
 
     def create_account(self, user, affect_gross=None, percentage_or_fixed=None):
         """Create a new account based on user's input.
