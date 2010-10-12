@@ -683,8 +683,6 @@ class Deposit(Transaction):
             gross = running_total = self.amount
             # Calculate gross deposits
             for (a, amt) in gross_accounts:
-                if debug:
-                    print('%s' % a)
                 amount = gross * amt
                 if amount > 0:
                     leftover += amount - round(amount, 2)

@@ -383,7 +383,7 @@ class BudseCLI(object):
             description = self._ask_string()
             account = None
             accounts = None
-            if self._confirm('Deposit into multiple accounts?', True):
+            if self._confirm('Deposit into multiple accounts?', False):
                 if not self._transact_for_whole_account():
                     accounts = self._ask_accounts()
             else:
@@ -425,7 +425,8 @@ class BudseCLI(object):
                     deposit = budse.Deposit(date=date, user=self.user,
                                        amount=amount, description=description,
                                        account=account, deductions=deductions,
-                                       duplicate_override=True)
+                                       duplicate_override=True,
+                                       accounts=accounts)
                 else:
                     self.status = '%s.  Ignoring transaction%s.' % (e, plural)
                     self.session.rollback()
@@ -1531,9 +1532,6 @@ class BudseCLI(object):
                                                     active_only=active_only)
         if not gross_reconfig and not net_reconfig:
             return False
-        if budse.debug:
-            for (a, ag, pf, amt) in accounts:
-                print('%s' % a)
         fixed = budse.harmless_filter_accounts(accounts, fixed=True,
                                      percentage=False, active_only=active_only)
         gross_percentage = budse.harmless_filter_accounts(accounts, gross=True,
@@ -1575,6 +1573,9 @@ class BudseCLI(object):
                                       'the net: ', exclude_accounts=excluded)
                 net_percentage.append((a, False, budse.Account.PERCENTAGE,
                                       100.00))
+            elif len(net_percentage) == 1:
+                (a, ag, pf, amt) = net_percentage.pop()
+                net_percentage.append((a, ag, pf, 100.00))
             else:
                 prompt = ('Reconfigure Account Amounts\n\nModify the '
                           'net percentage accounts to exactly 100%\n')
@@ -1602,9 +1603,6 @@ class BudseCLI(object):
             trash, net_reconfig = budse._harmless_require_reconfiguration(
                 net_percentage, check_gross=False, active_only=active_only)        
         final = gross_percentage + net_percentage + fixed
-        if budse.debug:
-            for (a, ag, pf, amt) in final:
-                print('%s' % a)
         return final
 
     def create_account(self, user, affect_gross=None, percentage_or_fixed=None):
