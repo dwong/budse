@@ -603,8 +603,8 @@ class Deposit(Transaction):
         parent -- Transaction object that this Deposit is a child of
             (default None)
         duplicate_override -- Do not check for duplicates (default False)
-        accounts -- List of Account objects (default None), new method
-            of depositing into multiple accounts (vs passing account=None)
+        accounts -- List of (Account, affect_gross, percentage_or_fixed,
+            amount) tuples (default None)
 
         (deprecated)
         For a 'whole account' deposit, will perform calculation and
@@ -613,7 +613,7 @@ class Deposit(Transaction):
 
         (current)
         Whole account deposits are not always desirable so the caller
-        can pass a list of Account objects using the 'accounts' parameter.
+        can pass a list of tuples using the 'accounts' parameter.
         Usage of this parameter will supercede anything done with the
         'account' parameter.
 
@@ -623,8 +623,14 @@ class Deposit(Transaction):
         3) Percentage amounts on the net
 
         """
+        # A None value for account is a flag for a multiple account deposit
         if accounts is not None:
             account = None
+        elif account is None:
+            accounts = []
+            for a in self.user.accounts:
+                accounts.append(a, a.affect_gross, a.percentage_or_fixed,
+                                a.amount)
 
         Transaction.__init__(self, user=user, amount=amount, account=account,
                              description=description, date=date, parent=parent,
@@ -640,64 +646,80 @@ class Deposit(Transaction):
                 raise FundsException('Deductions are more than the deposit')
         self.deposits = []
         if self.account is None:
-            # list of (Account, amount) tuples
+            # last ditch check
+            if accounts is None or len(accounts) == 0:
+                raise DepositException('Accounts are required.')
+            
+            # lists of separated accounts
+            gross_accounts = []
+            fixed_accounts = []
+            net_accounts = []
+            # lists of (Account, amount) tuples
             gross_deposits = []
             fixed_deposits = []
             net_deposits = []
 
-            # Old way assumes always doing whole account deposit
-            if accounts is None:
-                accounts = self.user.accounts
-
             # Calculate minimum deposit for error message
             minimum_deposit = deduction_total
-            for account in filter_accounts(accounts, fixed=False, gross=True):
-                minimum_deposit += self.amount * account.amount
-            for account in filter_accounts(accounts, percentage=False):
-                minimum_deposit += account.amount
 
+            for (a, affect_gross, percentage_or_fixed, amount) in accounts:
+                # Fixed
+                if percentage_or_fixed == Account.FIXED:
+                    minimum_deposit += amount
+                    fixed_accounts.append((a, amount))
+                # Percentage, gross
+                elif affect_gross:
+                    minimum_deposit += self.amount * amount
+                    gross_accounts.append((a, amount))
+                else:
+                    net_accounts.append((a, amount))
+            
             if self.amount <= minimum_deposit:
                 raise FundsException('Insufficient funds for whole account'
-                                     ' deposit.  (Minimum %0.2f)' %
+                                     ' deposit.  (Minimum $%0.2f)' %
                                      minimum_deposit)
 
             leftover = 0.00
             gross = running_total = self.amount
             # Calculate gross deposits
-            for account in filter_accounts(accounts, fixed=False, gross=True):
-                amount = gross * account.amount
+            for (a, amt) in gross_accounts:
+                amount = gross * amt
                 if amount > 0:
                     leftover += amount - round(amount, 2)
                     amount = round(amount, 2)
                     running_total -= amount
-                    gross_deposits.append((account, amount))
+                    gross_deposits.append((a, amount))
+
             # Execute deductions
             running_total -= deduction_total
+
             # Calculate fixed deposits
-            for account in filter_accounts(accounts, percentage=False):
+            for (a, amt) in fixed_accounts:
                 if running_total > 0:
-                    running_total -= account.amount
-                    if account.amount > 0:
-                        fixed_deposits.append((account, account.amount))
+                    if amt > 0:
+                        running_total -= amt
+                        fixed_deposits.append((a, amt))
+                    elif amt < 0:
+                        raise DepositException('Invalid negative deposit')
                 else:
                     raise FundsException('Insufficient funds for whole account'
                                          ' deposit')
+                
             # Calculate net deposits
             if running_total > 0:
                 net = running_total
-                for account in filter_accounts(accounts, fixed=False,
-                                               gross=False):
-                    amount = net * account.amount
+                for (a, amt) in net_accounts:
+                    amount = net * amt
                     if amount > 0:
                         leftover += amount - round(amount, 2)
                         amount = round(amount, 2)
                         running_total -= amount
-                        net_deposits.append((account, amount))
+                        net_deposits.append((a, amount))
                 else:
-                    account, amount = net_deposits.pop()
+                    a, amount = net_deposits.pop()
                     amount += round(leftover, 2)
-                    net_deposits.append((account, amount))
-            
+                    net_deposits.append((a, amount))
+                
             # Process gross percentage accounts
             for account, amount in gross_deposits:
                 deposit = Deposit(user=self.user, amount=amount, parent=self,
@@ -708,7 +730,7 @@ class Deposit(Transaction):
                 self.deposits.append(deposit)
             # Process all (gross and net) fixed amounts at once
             for account, amount in fixed_deposits:
-                deposit = Deposit(user=self.user, amount=account.amount,
+                deposit = Deposit(user=self.user, amount=amount,
                                   date=self.date, account=account, 
                                   description=self.description, parent=self,
                                   duplicate_override=duplicate_override)
@@ -802,7 +824,8 @@ def filter_accounts(accounts, fixed=True, percentage=True, gross=None,
 
     Keyword Arguments:
     accounts -- List of Account objects
-    fixed - Retrieve the accounts with a fixed transaction amount (default True)
+    fixed - Retrieve the accounts with a fixed transaction amount
+            (default True)
     percentage -- Retrieve the accounts with a percentage transaction amount
         (default True)
     gross -- Modifies the gross amount (rather than the net amount), only
@@ -826,6 +849,38 @@ def filter_accounts(accounts, fixed=True, percentage=True, gross=None,
     else:
         matching = [account for account in accounts \
                         for id in id_values if account.id == id]
+    return matching
+
+def harmless_filter_accounts(accounts, fixed=True, percentage=True,
+                             gross=None, active_only=True, id_values=[]):
+    """Filter Account objects based on properties.
+
+    Keyword Arguments:
+    accounts -- List of (Account, affect_gross, percentage_or_fixed, amount)
+                tuples to filter    
+    fixed -- Retrieve the accounts with a fixed transaction amount
+            (default True)
+    percentage -- Retrieve the accounts with a percentage transaction amount
+        (default True)
+    gross -- Modifies the gross amount (rather than the net amount), only
+        applicable if this is a percentage amount type (default None
+        will ignore gross setting)
+    active_only -- Only return the active accounts (default True)
+    id_values -- List of ID values to match
+    
+    Returns:
+        List of Account objects for parameters
+
+    """
+    if not id_values:
+        matching = [(a, ag, pf, amt) for (a, ag, pf, amt) in accounts
+                    if (fixed and pf == Account.FIXED) or \
+                       (percentage and pf == Account.PERCENTAGE)
+                    if gross == ag or gross is None
+                    if not active_only or a.status]
+    else:
+        matching = [(a, ag, pf, amt) for (a, ag, pf, amt) in accounts \
+                        for id in id_values if a.id == id]
     return matching
 
 def _require_reconfiguration(accounts, check_gross=True, check_net=True,
@@ -861,6 +916,41 @@ def _require_reconfiguration(accounts, check_gross=True, check_net=True,
             net_reconfiguration = True
     return gross_reconfiguration, net_reconfiguration
 
+def _harmless_require_reconfiguration(accounts, check_gross=True,
+                                      check_net=True, active_only=True):
+    """Determine whether accounts need to be reconfigured.
+
+    Keyword arguments:
+    accounts -- List of (Account, affect_gross,
+                         percentage_or_fixed, amount) to verify
+    check_gross -- Verify the gross accounts in the list (Default True)
+    check_net -- Verify the net accounts in the list (Default True)
+    active_only -- Only check the active accounts (Default True)
+
+    Returns:
+    Two Boolean values:
+        gross_reconfiguration - True if required, else False
+        net_reconfiguration - True if required, else False
+    
+    """
+    gross_reconfiguration = net_reconfiguration = False
+    if check_gross:
+        total = 0
+        for (a, ag, pf, amt) in harmless_filter_accounts(accounts, gross=True,
+                                   fixed=False, active_only=active_only):
+            total += _format_db_amount(amt)
+        if total > 10000:
+            gross_reconfiguration = True
+    if check_net:
+        total = 0
+        for (a, ag, pf, amt) in harmless_filter_accounts(accounts, gross=False,
+                                    fixed=False, active_only=active_only):
+            total += _format_db_amount(amt)
+        if total != 10000:
+            net_reconfiguration = True
+    return gross_reconfiguration, net_reconfiguration
+
+
 def _format_db_amount(amount):
     return int(round(float(amount) * 100))
 
@@ -872,8 +962,24 @@ class BudseException(Exception):
     """Base class for exceptions in this module."""
     pass
 
+class DepositException(BudseException):
+    """General invalid deposit."""
+    def __init__(self, expression):
+        self.expression = expression
+
+    def __str__(self):
+        return str(self.expression)
+
 class FundsException(BudseException):
     """Incorrect funds for a specified action."""
+    def __init__(self, expression):
+        self.expression = expression
+
+    def __str__(self):
+        return str(self.expression)
+
+class ParameterException(BudseException):
+    """Parameters are not as expected."""
     def __init__(self, expression):
         self.expression = expression
 

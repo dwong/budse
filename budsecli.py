@@ -2,7 +2,7 @@
 # BUDget for Spam and Eggs (Budse)
 #
 # Version:
-#     1.001
+#     0.4
 #
 # Description:
 #     Budse with a Command Line Interface (CLI)
@@ -382,11 +382,16 @@ class BudseCLI(object):
             amount = self._ask_amount()
             description = self._ask_string()
             account = None
-            if not self._transact_for_whole_account():
+            accounts = None
+            if self._confirm('Deposit into multiple accounts?', False):
+                if not self._transact_for_whole_account():
+                    accounts = self._ask_accounts()
+            else:
                 account = self._ask_account('Deposit into which account: ')
             deduction_tuples = None
             deductions = []
-            if self._confirm('Deduct from gross?'):
+            if self._confirm('Do you have deductions to make on the gross '
+                             'amount of the deposit?'):
                 if self._confirm('Use stored deductions?'):
                     deduction_tuples = self.user.deductions
                     #TODO load from self.user.deductions instead of assigning
@@ -402,7 +407,8 @@ class BudseCLI(object):
             try:
                 deposit = budse.Deposit(date=date, user=self.user,
                                         amount=amount, description=description,
-                                        account=account, deductions=deductions)
+                                        account=account, deductions=deductions,
+                                        accounts=accounts)
             except budse.FundsException, e:
                 self.status = str(e)
                 self.session.rollback()
@@ -419,7 +425,8 @@ class BudseCLI(object):
                     deposit = budse.Deposit(date=date, user=self.user,
                                        amount=amount, description=description,
                                        account=account, deductions=deductions,
-                                       duplicate_override=True)
+                                       duplicate_override=True,
+                                       accounts=accounts)
                 else:
                     self.status = '%s.  Ignoring transaction%s.' % (e, plural)
                     self.session.rollback()
@@ -1234,6 +1241,109 @@ class BudseCLI(object):
         if not gross_modified:
             self.status = 'Kept existing setting for affecting the gross amount'
 
+    def _ask_accounts(self, prompt='Include account for transaction: ',
+                     active_only=True, excluded_accounts=[]):
+        """Query user for set of accounts
+
+        Keyword arguments:
+        prompt -- Prompt for asking for an account
+        active_only -- Only allow active accounts to be chosen for list
+        excluded_accounts -- Accounts to not allow in to list
+
+        Returns:
+        Properly configured list of (Account, affect_gross,
+                                     percentage_or_fixed, amount) tuples
+        """
+        done = False
+        accounts = []
+        excluded_accts = []
+        excluded_accts.extend(excluded_accounts)
+        status = ''
+        while not done:
+            clear_screen()
+            print('Account List Dialog\n')
+            if len(accounts):
+                print('Account%s selected (name, amount and type):' %
+                      ('s' if len(accounts) > 1 else ''))
+                for i, (a, ag, pf, amt) in zip(range(len(accounts)), accounts):
+                    print('%d - (%s, %s)' %
+                          (i+1, a.name, (('%0.2f%% of gross' % amt)
+                                         if ag
+                                         else ('%0.2f%% of net' % amt))
+                                        if pf == budse.Account.PERCENTAGE
+                                        else ('$%0.2f' % amt)))
+            output_prompt = ('Actions:\na - Add account\nr - '
+                             'Remove account \nso - Start Over'
+                             '\n%s\n%s\nInput: ' %
+                             (BudseCLI.meta_actions, status))
+            status = ''
+            try:
+                choice = self._ask_string('\n%s' % output_prompt).upper()
+                if choice.startswith('A'):
+                    a = self._ask_account(prompt=prompt,
+                                          active_only=active_only,
+                                          exclude_accounts=excluded_accts)
+                    # Percentage or fixed account
+                    pf = None
+                    stat = ''
+                    while pf is None:
+                        p = ("Account Type:\nP'ercentage\nF'ixed\n%s\n"
+                                  "Choice: " % stat)
+                        stat = ''
+                        choice = self._ask_string(p).upper()
+                        if choice.startswith('P'):
+                            pf = budse.Account.PERCENTAGE
+                        elif choice.startswith('F'):
+                            pf = budse.Account.FIXED
+                        else:
+                            stat = ('Invalid choice - %s' %
+                                    random.choice(budse.fun))
+                    # Affect gross?
+                    if pf == budse.Account.PERCENTAGE:
+                        ag = self._confirm('Take percentage of deposit from '
+                                           'the gross of the deposit?',
+                                           a.affect_gross)
+                    else:
+                        ag = False
+                    # Amount
+                    amt = self._ask_amount(prompt='%s the deposit: ' %
+                                           (('Percentage of the %s of' %
+                                             ('gross' if ag else 'net'))
+                                            if pf == budse.Account.PERCENTAGE
+                                            else 'Dollar amount taken from'))
+                    accounts.append((a, ag, pf, amt))
+                    excluded_accts.append(a.id)
+                elif choice.startswith('R'):
+                    index = self._ask_amount('Remove account: ', int) - 1 
+                    if index >= 0 and index < len(accounts):
+                        excluded_accts.remove(accounts.pop(index)[0].id)
+                    else:
+                        status = ('Invalid choice - %s' %
+                                  random.choice(budse.fun))
+                        continue
+                elif choice == 'SO':
+                    accounts = []
+                    excluded_accts = []
+                    excluded_accts.extend(excluded_accounts)
+                    status = 'Account list has been reset, start over!'
+                    continue
+                else:
+                    status = 'Invalid choice - %s' % random.choice(budse.fun)
+                    continue
+            except budse.DoneException:
+                break
+            except budse.ConversionException:
+                status = 'Invalid choice - %s' % random.choice(budse.fun)
+            except budse.ParameterException:
+                pass
+        formatted_accounts = []
+        for (a, ag, pf, amt) in self.harmless_reconfigure_accounts(accounts):
+            if pf == budse.Account.PERCENTAGE:
+                amt = budse._format_out_amount(amt)
+            formatted_accounts.append((a, ag, pf, amt))
+        return formatted_accounts
+
+
     def _ask_account(self, prompt='Perform transaction using which account: ',
                      active_only=True, exclude_accounts=[]):
         """Query user for a specific account to use for transaction
@@ -1241,7 +1351,7 @@ class BudseCLI(object):
         Keyword arguments:
         prompt -- What to ask the user
         active_only -- Only show the active accounts (default True)
-        exclude_accounts -- Account objects to exclude from the prompt
+        exclude_accounts -- Account IDs to exclude from the prompt
 
         Returns:
         Account object
@@ -1250,10 +1360,14 @@ class BudseCLI(object):
         if active_only:
             accounts = self.session.query(budse.Account).\
                        filter(budse.Account.user == self.user).\
-                       filter(budse.Account.status == True).all()
+                       filter(budse.Account.status == True).\
+                       filter(~budse.Account.id.in_(exclude_accounts)).all()
         else:
             accounts = self.session.query(budse.Account).\
-                       filter(budse.Account.user == self.user).all()
+                       filter(budse.Account.user == self.user).\
+                       filter(~budse.Account.id.in_(exclude_accounts)).all()
+        if not len(accounts):
+            raise budse.ParameterException('No accounts in list')
         clear_screen()
         print '\nAccounts: '
         for index, account in zip(range(len(accounts)), accounts):
@@ -1283,7 +1397,8 @@ class BudseCLI(object):
 
         """
         if self.user.whole_account_actions:
-            return self._confirm('Deposit into the whole account?', default)
+            return self._confirm('Use the default values for the '
+                                 'user\'s accounts?', default)
         else: # User does not want to ever be prompted for whole account actions
             return False
 
@@ -1399,6 +1514,96 @@ class BudseCLI(object):
             return True
         else:
             return False
+
+    def harmless_reconfigure_accounts(self, accounts, active_only=True):
+        """Modify amounts for accounts to maintain requirements.
+
+        Keyword arguments:
+        accounts -- List of (Account, affect_gross, percentage_or_fixed,
+                             amount) tuples to reconfigure
+    
+        Returns:
+        accounts -- The modified list of tuples (same tuple type as the
+                    argument list)
+        
+        """
+        gross_reconfig, net_reconfig = \
+            budse._harmless_require_reconfiguration(accounts,
+                                                    active_only=active_only)
+        if not gross_reconfig and not net_reconfig:
+            return False
+        fixed = budse.harmless_filter_accounts(accounts, fixed=True,
+                                     percentage=False, active_only=active_only)
+        gross_percentage = budse.harmless_filter_accounts(accounts, gross=True,
+                                          fixed=False, active_only=active_only)
+        net_percentage = budse.harmless_filter_accounts(accounts, gross=False,
+                                          fixed=False, active_only=active_only)
+        status = ''
+        while gross_reconfig:
+            prompt = ('Reconfigure Account Amounts\n\nModify the gross '
+                      'percentage accounts to less than 100%\n')
+            total = 0.00
+            for index, (a, ag, pf, amt) in zip(range(len(gross_percentage)),
+                                                gross_percentage):
+                prompt += ('%d - %s (%0.2f%%)\n' % ((index+1), a.name, amt))
+                total += amt
+            prompt += 'Total: %0.2f\n%s\nModify: ' % (total, status)
+            status = ''
+            try:
+                choice = self._ask_amount(prompt, int) - 1 # Pretty index
+                if choice >= 0 and choice < len(gross_percentage):
+                    amount = self._ask_amount()
+                    (a, ag, pf, amt) = gross_percentage.pop(choice)
+                    if self._confirm(("Use %0.2f for '%sn'" %
+                                      (amount, a.name)), default=True):
+                        gross_percentage.insert(choice, (a, ag, pf, amount))
+                        status = ("'%s' modified" % a.name)
+                else:
+                    status = 'Invalid choice - %s' % random.choice(budse.fun)
+            except (budse.CancelException, budse.DoneException):
+                status = 'Canceled change, continue to reconfigure'
+            gross_reconfig, trash = budse._harmless_require_reconfiguration(
+                gross_percentage, check_net=False, active_only=active_only)
+        while net_reconfig:
+            if len(net_percentage) == 0:
+                excluded = []
+                for (a, ag, pf, amt) in accounts:
+                    excluded.append(a.id)
+                a = self._ask_account(prompt='Choose one account for all of '
+                                      'the net: ', exclude_accounts=excluded)
+                net_percentage.append((a, False, budse.Account.PERCENTAGE,
+                                      100.00))
+            elif len(net_percentage) == 1:
+                (a, ag, pf, amt) = net_percentage.pop()
+                net_percentage.append((a, ag, pf, 100.00))
+            else:
+                prompt = ('Reconfigure Account Amounts\n\nModify the '
+                          'net percentage accounts to exactly 100%\n')
+                total = 0.00
+                for index, (a, ag, pf, amt) in zip(range(len(net_percentage)),
+                                                   net_percentage):
+                    prompt += ('%d - %s (%0.2f%%)\n' %
+                               ((index+1), a.name, amt))
+                    total += amt
+                prompt += 'Total: %0.2f\n%s\nModify: ' % (total, status)
+                status = ''
+                try:
+                    choice = self._ask_amount(prompt, int) - 1 # Pretty index
+                    if choice >= 0 and choice < len(net_percentage):
+                        amount = self._ask_amount()
+                        (a, ag, pf, amt) = net_percentage.pop(choice)
+                        if self._confirm(("Use %0.2f for '%s'" %
+                                          (amount, a.name)), default=True):
+                            net_percentage.insert(choice, (a, ag, pf, amount))
+                            status = ("'%s' modified" % a.name)
+                    else:
+                        status = 'Invalid choice - %s' % random.choice(budse.fun)
+                except (budse.CancelException, budse.DoneException):
+                    status = 'Canceled change, continue to reconfigure'
+            trash, net_reconfig = budse._harmless_require_reconfiguration(
+                net_percentage, check_gross=False, active_only=active_only)        
+        final = gross_percentage + net_percentage + fixed
+        return final
 
     def create_account(self, user, affect_gross=None, percentage_or_fixed=None):
         """Create a new account based on user's input.
@@ -1526,7 +1731,7 @@ class BudseCLI(object):
         completed_accounts = []
         for acct in accounts:
             if acct is not None:
-                completed_accounts.add(acct)
+                completed_accounts.append(acct)
         self.reconfigure_accounts(completed_accounts, active_only=False)
         if self._confirm(('%s\nCreate user %s?' %
                           ((str(new_user)).replace(budse.str_delimiter, '\n').\
