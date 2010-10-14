@@ -628,10 +628,9 @@ class Deposit(Transaction):
             account = None
         elif account is None:
             accounts = []
-            for a in self.user.accounts:
-                accounts.append(a, a.affect_gross, a.percentage_or_fixed,
-                                a.amount)
-
+            for a in user.accounts:
+                accounts.append((a, a.affect_gross, a.percentage_or_fixed,
+                                 a.amount))
         Transaction.__init__(self, user=user, amount=amount, account=account,
                              description=description, date=date, parent=parent,
                              duplicate_override=duplicate_override)
