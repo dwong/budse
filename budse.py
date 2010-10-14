@@ -357,7 +357,7 @@ class Transaction(Base):
     __tablename__ = 'transactions'
 
     id = Column('transaction_id', Integer, primary_key=True)
-    _timestamp = Column('timestamp', DateTime, default=datetime.datetime.now())
+    _timestamp = Column('timestamp', DateTime)
     date = Column(Date)
     _user = Column('user_id', Integer, ForeignKey('users.user_id'))
     _account = Column('account_id', Integer, ForeignKey('accounts.account_id'))
@@ -385,6 +385,7 @@ class Transaction(Base):
         self.description = description
         self.parent = parent
         self.initial = True
+        self.timestamp = datetime.datetime.now()
 
         if not duplicate_override:
             duplicates = []
@@ -413,12 +414,14 @@ class Transaction(Base):
         return _format_out_amount(self._amount)
     amount = synonym('_amount', descriptor=property(_get_amount, _set_amount))
 
-    @synonym_for('_timestamp')
-    @property
-    def timestamp(self):
+    def _set_timestamp(self, ts):
+        self._timestamp = ts
+    def _get_timestamp(self):
         ts = self._timestamp
         return('%s-%02d-%02d %02d:%02d:%02d' % (ts.year, ts.month, ts.day,
                                                 ts.hour, ts.minute, ts.second))
+    timestamp = synonym('_timestamp', descriptor=property(_get_timestamp,
+                                                          _set_timestamp))
 
     def commit(self):
         """Only used for the first save to the database."""
