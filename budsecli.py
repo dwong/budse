@@ -428,7 +428,7 @@ class BudseCLI(object):
                                        duplicate_override=True,
                                        accounts=accounts)
                 else:
-                    self.status = '%s.  Ignoring transaction%s.' % (e, plural)
+                    self.status = '%s.  Ignoring transaction%s' % (e, plural)
                     self.session.rollback()
                     return
 
