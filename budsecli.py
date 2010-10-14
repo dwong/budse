@@ -415,10 +415,7 @@ class BudseCLI(object):
                 return
             except budse.DuplicateException, e:
                 clear_screen()
-                if (len(e.duplicates)==1):
-                    plural = ''
-                else:
-                    plural = 's'
+                plural = '' if (len(e.duplicates)==1) else 's'
                 print('%s:\n== Duplicate%s ==\n' % (e, plural))
                 self.output_transactions(e.duplicates)
                 if self._confirm('Ignore duplicate%s?' % plural, False):
