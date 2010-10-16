@@ -632,8 +632,9 @@ class Deposit(Transaction):
         elif account is None:
             accounts = []
             for a in user.accounts:
-                accounts.append((a, a.affect_gross, a.percentage_or_fixed,
-                                 a.amount))
+                if a.status:
+                    accounts.append((a, a.affect_gross, a.percentage_or_fixed,
+                                     a.amount))
         Transaction.__init__(self, user=user, amount=amount, account=account,
                              description=description, date=date, parent=parent,
                              duplicate_override=duplicate_override)
