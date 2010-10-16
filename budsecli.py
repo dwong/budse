@@ -1528,7 +1528,7 @@ class BudseCLI(object):
             budse._harmless_require_reconfiguration(accounts,
                                                     active_only=active_only)
         if not gross_reconfig and not net_reconfig:
-            return False
+            return accounts
         fixed = budse.harmless_filter_accounts(accounts, fixed=True,
                                      percentage=False, active_only=active_only)
         gross_percentage = budse.harmless_filter_accounts(accounts, gross=True,
