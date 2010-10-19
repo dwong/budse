@@ -229,8 +229,8 @@ class BudseCLI(object):
 
         """
         choice = self._ask_string('Search\n\n1 - Date Range\n2 - Date\n3 - '
-                                  'ID\n4 - Keywords\n%s\n\nChoice: ' %
-                                  BudseCLI.meta_actions)
+                                  'ID\n4 - Keywords\n5 - Amount\n%s\n\n'
+                                  'Choice: ' % BudseCLI.meta_actions)
         limit = 10
         if choice == '1':
             begin_date = self._ask_date(prompt='Start of transactions')
@@ -265,6 +265,12 @@ class BudseCLI(object):
                 filter(or_(*[budse.Transaction.description.contains(keyword) \
                                  for keyword in keywords])).\
                 order_by(desc(budse.Transaction.date))[:limit]
+        elif choice == '5':
+            amount = self._ask_amount('Amount of transaction: ')
+            amount = budse._format_db_amount(amount)
+            return self.session.query(budse.Transaction).\
+                filter(budse.Transaction.amount == amount).\
+                order_by(desc(budse.Transaction.date))
         
     def output_transactions(self, transactions):
         """Output a list of transactions.
