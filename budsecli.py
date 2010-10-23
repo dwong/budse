@@ -531,53 +531,57 @@ class BudseCLI(object):
         print('Transfer Between Accounts\n')
         date = datetime.date.today()
         try:
-            self.print_balance(include_all=True, include_user_total=False)
-            withdrawal_account = self._ask_account(prompt='Transfer from: ')
-            deposit_account = self._ask_account(prompt='Transfer to: ')
-            print('Transfer from: %s (%0.2f)\nTransfer to: %s (%0.2f)\n' % 
-                  (withdrawal_account.name, withdrawal_account.total,
-                   deposit_account.name, deposit_account.total))
-            amount = self._ask_amount()
-            description = self._ask_string()
-            transfer = budse.Transfer(user=self.user, amount=amount, date=date,
-                                      description=description,
-                                      to_account=deposit_account,
-                                      from_account=withdrawal_account)
+            try:
+                self.print_balance(include_all=True, include_user_total=False)
+                withdrawal_account = self._ask_account(
+                    prompt='Transfer from: ')
+                deposit_account = self._ask_account(prompt='Transfer to: ')
+                print('Transfer from: %s (%0.2f)\nTransfer to: %s (%0.2f)\n' % 
+                      (withdrawal_account.name, withdrawal_account.total,
+                       deposit_account.name, deposit_account.total))
+                amount = self._ask_amount()
+                description = self._ask_string()
+                transfer = budse.Transfer(user=self.user, amount=amount, 
+                                          description=description, date=date,
+                                          to_account=deposit_account,
+                                          from_account=withdrawal_account)
+            except budse.DuplicateException, e:
+                clear_screen()
+                plural = 's' if len(e.duplicates) > 1 else 's'
+                self.output_transactions(e.duplicates,
+                    pre='%s!\n\n== Duplicate%s ==' % (e, plural),
+                    post='----------------')
+                if self._confirm('Proceed with transaction anyway?', False):
+                    transfer = budse.Transfer(user=self.user, amount=amount,
+                                              date=date,
+                                              description=description,
+                                              to_account=deposit_account,
+                                              from_account=withdrawal_account,
+                                              duplicate_override=True)
+                else:
+                    self.status = '%s.  Ignoring transaction%s' % (e, plural)
+                    self.session.rollback()
+                    return
+
+            clear_screen()
+            self.output_transactions([transfer],
+                                     pre='\n== Transfer Details ==')
+            if self._confirm('Execute transfer?', default=True):
+                transfer.commit()
+                self.session.add(transfer)
+                self.session.commit()
+                self.status = ('Transferred %0.2f from %s to %s' %
+                               (transfer.amount, transfer.from_account.name,
+                                transfer.to_account.name))
+            else:
+                self.session.rollback()
+                self._clear_status()
+                self.status = 'Transfer canceled'
         except (budse.CancelException, budse.DoneException):
             self.session.rollback()
             self._clear_status()
             self.status = 'Transfer canceled'
             return
-        except budse.DuplicateException, e:
-            clear_screen()
-            plural = 's' if len(e.duplicates) > 1 else 's'
-            self.output_transactions(e.duplicates,
-                pre='%s!\n\n== Duplicate%s ==' % (e, plural),
-                post='----------------')
-            if self._confirm('Proceed with transaction anyway?', False):
-                transfer = budse.Transfer(user=self.user, amount=amount,
-                                          date=date, description=description,
-                                          to_account=deposit_account,
-                                          from_account=withdrawal_account,
-                                          duplicate_override=True)
-            else:
-                self.status = '%s.  Ignoring transaction%s.' % (e, plural)
-                self.session.rollback()
-                return
-
-        clear_screen()
-        self.output_transactions([transfer], pre='\n== Transfer Details ==')
-        if self._confirm('Execute transfer?', default=True):
-            transfer.commit()
-            self.session.add(transfer)
-            self.session.commit()
-            self.status = ('Transferred %0.2f from %s to %s' %
-                           (transfer.amount, transfer.from_account.name,
-                            transfer.to_account.name))
-        else:
-            self.session.rollback()
-            self._clear_status()
-            self.status = 'Transfer canceled'
     
     def reverse_transaction(self):
         """Undo whatever effect a transaction group had."""
@@ -660,7 +664,8 @@ class BudseCLI(object):
                 # TODO add Excel report using pyExcelerator
                 # TODO account report for dates
                 else:
-                    self.status = 'Invalid choice - %s' % random.choice(budse.fun)
+                    self.status = ('Invalid choice - %s' %
+                                   random.choice(budse.fun))
             except (budse.CancelException, budse.DoneException):
                 self.status = 'Report canceled'
                 return
@@ -825,7 +830,8 @@ class BudseCLI(object):
                 elif action == '6':
                     self.modify_user_whole(self.user)
                 else:
-                    self.status = 'Invalid action - %s' % random.choice(budse.fun)
+                    self.status = ('Invalid action - %s' %
+                                   random.choice(budse.fun))
                 self.session.commit()
             except budse.CancelException:
                 self._clear_status()
@@ -983,7 +989,7 @@ class BudseCLI(object):
         else:
             self.status = 'Deductions not modified'
 
-    def modify_user_whole(self, user):   # not hole, that would be inappropriate
+    def modify_user_whole(self, user): # not hole, that would be inappropriate
         """Change whether user is prompted for whole account actions."""
         if user.whole_account_actions is not None:
             whole_modified = False
@@ -1000,8 +1006,8 @@ class BudseCLI(object):
             if not whole_modified:
                 self.status = "Kept user's setting for whole account actions"
         else:
-            user.whole_account_actions = self._confirm('Activate whole account '
-                                                       'actions?', True)
+            user.whole_account_actions = self._confirm('Activate whole accou'
+                                                       'nt actions?', True)
 
     def modify_account(self):
         """Allow the user to modify aspects of an existing account."""
