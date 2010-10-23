@@ -272,15 +272,19 @@ class BudseCLI(object):
                 filter(budse.Transaction.amount == amount).\
                 order_by(desc(budse.Transaction.date))
         
-    def output_transactions(self, transactions):
+    def output_transactions(self, transactions, pre='', breaks='', post=''):
         """Output a list of transactions.
 
         Keyword arguments:
         transactions -- List of Transaction objects to output
+        pre -- Output before the transactions
+        breaks -- Output in between transactions
+        post -- Output after the transactions
         
         """
         # Tags to not print in children transactions
         restricted = ['ACTIVE', 'TRANSACTION DATE']
+        print(pre)
         try:
             for parent_transaction in transactions:
                 if parent_transaction.id is not None:
@@ -308,9 +312,10 @@ class BudseCLI(object):
                         elif tag == 'ACCOUNT':
                             account = ' into %s' % info
                     print('    %s%s%s%s' % (action, amount, account, description))
-                print('')
+                print(breaks)
         except TypeError:
             pass
+        print(post)
 
     def ask_deduction_list(self, prompt='Provide a list of deductions to make'):
         """Prompt the user for their list of deductions
@@ -421,10 +426,11 @@ class BudseCLI(object):
                 return
             except budse.DuplicateException, e:
                 clear_screen()
-                plural = '' if (len(e.duplicates)==1) else 's'
-                print('%s:\n== Duplicate%s ==\n' % (e, plural))
-                self.output_transactions(e.duplicates)
-                if self._confirm('Ignore duplicate%s?' % plural, False):
+                plural = 's' if len(e.duplicates) > 1 else ''
+                self.output_transactions(e.duplicates,
+                    pre='%s!\n\n== Duplicate%s ==' % (e, plural),
+                    post='----------------')
+                if self._confirm('Proceed with transaction anyway?', False):
                     deposit = budse.Deposit(date=date, user=self.user,
                                        amount=amount, description=description,
                                        account=account, deductions=deductions,
@@ -436,8 +442,8 @@ class BudseCLI(object):
                     return
 
             clear_screen()
-            print('\n==  Deposit Details  ==\n')
-            self.output_transactions([deposit])
+            self.output_transactions([deposit],
+                                     pre='\n==  Deposit Details  ==\n')
             if self._confirm('Execute deposit?', True):
                 deposit.commit()
                 self.session.add(deposit)
@@ -478,22 +484,23 @@ class BudseCLI(object):
             except budse.DuplicateException, e:
                 clear_screen()
                 plural = 's' if len(e.duplicates) > 1 else ''
-                print('%s:\n== Duplicate%s ==\n' % (e, plural))
-                self.output_transactions(e.duplicates)
-                if self._confirm('Ignore duplicate%s?' % plural, False):
+                self.output_transactions(e.duplicates,
+                    pre='%s!\n\n== Duplicate%s ==' % (e, plural),
+                    post='----------------')
+                if self._confirm('Proceed with transaction anyway?', False):
                     withdrawal = budse.Withdrawal(user=self.user, date=date,
                                                   amount=amount,
                                                   description=description,
                                                   account=account,
                                                   duplicate_override=True)
                 else:
-                    self.status = '%s.  Ignoring transaction%s.' % (e, plural)
+                    self.status = '%s.  Ignoring transaction%s' % (e, plural)
                     self.session.rollback()
                     return
 
             clear_screen()
-            print('\n== Withdrawal Details ==')
-            self.output_transactions([withdrawal])
+            self.output_transactions([withdrawal],
+                                     pre='\n== Withdrawal Details ==')
             if self._confirm('Execute withdrawal?', True):
                 withdrawal.commit()
                 self.session.add(withdrawal)
@@ -544,9 +551,10 @@ class BudseCLI(object):
         except budse.DuplicateException, e:
             clear_screen()
             plural = 's' if len(e.duplicates) > 1 else 's'
-            print('%s:\n== Duplicate%s ==\n' % (e, plural))
-            self.output_transactions(e.duplicates)
-            if self._confirm('Ignore duplicate%s?' % plural, False):
+            self.output_transactions(e.duplicates,
+                pre='%s!\n\n== Duplicate%s ==' % (e, plural),
+                post='----------------')
+            if self._confirm('Proceed with transaction anyway?', False):
                 transfer = budse.Transfer(user=self.user, amount=amount,
                                           date=date, description=description,
                                           to_account=deposit_account,
@@ -558,8 +566,7 @@ class BudseCLI(object):
                 return
 
         clear_screen()
-        print('\n== Transfer Details ==')
-        self.output_transactions([transfer])
+        self.output_transactions([transfer], pre='\n== Transfer Details ==')
         if self._confirm('Execute transfer?', default=True):
             transfer.commit()
             self.session.add(transfer)
