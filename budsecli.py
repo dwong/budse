@@ -466,49 +466,49 @@ class BudseCLI(object):
         """
         print('Make A Withdrawal\n')
         try:
-            date = self._ask_date()
-            amount = self._ask_amount()
-            description = self._ask_string()
-            account = self._ask_account()
-            withdrawal = budse.Withdrawal(user=self.user, amount=amount,
-                                          date=date, description=description,
-                                          account=account)
+            try:
+                date = self._ask_date()
+                amount = self._ask_amount()
+                description = self._ask_string()
+                account = self._ask_account()
+                withdrawal = budse.Withdrawal(user=self.user, amount=amount,
+                                              date=date,
+                                              description=description,
+                                              account=account)
+            except budse.DuplicateException, e:
+                clear_screen()
+                plural = 's' if len(e.duplicates) > 1 else ''
+                print('%s:\n== Duplicate%s ==\n' % (e, plural))
+                self.output_transactions(e.duplicates)
+                if self._confirm('Ignore duplicate%s?' % plural, False):
+                    withdrawal = budse.Withdrawal(user=self.user, date=date,
+                                                  amount=amount,
+                                                  description=description,
+                                                  account=account,
+                                                  duplicate_override=True)
+                else:
+                    self.status = '%s.  Ignoring transaction%s.' % (e, plural)
+                    self.session.rollback()
+                    return
+
+            clear_screen()
+            print('\n== Withdrawal Details ==')
+            self.output_transactions([withdrawal])
+            if self._confirm('Execute withdrawal?', True):
+                withdrawal.commit()
+                self.session.add(withdrawal)
+                self.session.commit()
+                self.status = ('Withdrew $%0.2f from %s' %
+                               (withdrawal.amount, withdrawal.account.name))
+            else:
+                self.session.rollback()
+                self._clear_status()
+                self.status = 'Withdrawal canceled'
         except (budse.CancelException, budse.DoneException):
             self.session.rollback()
             self._clear_status()
             self.status = 'Withdrawal canceled'
             return
-        except budse.DuplicateException, e:
-            clear_screen()
-            if (len(e.duplicates)==1):
-                plural = ''
-            else:
-                plural = 's'
-            print('%s:\n== Duplicate%s ==\n' % (e, plural))
-            self.output_transactions(e.duplicates)
-            if self._confirm('Ignore duplicate%s?' % plural, False):
-                withdrawal = budse.Withdrawal(user=self.user, amount=amount,
-                                           date=date, description=description,
-                                           account=account,
-                                           duplicate_override=True)
-            else:
-                self.status = '%s.  Ignoring transaction%s.' % (e, plural)
-                self.session.rollback()
-                return
-
-        clear_screen()
-        print('\n== Withdrawal Details ==')
-        self.output_transactions([withdrawal])
-        if self._confirm('Execute withdrawal?', True):
-            withdrawal.commit()
-            self.session.add(withdrawal)
-            self.session.commit()
-            self.status = ('Withdrew $%0.2f from %s' %
-                           (withdrawal.amount, withdrawal.account.name))
-        else:
-            self.session.rollback()
-            self._clear_status()
-            self.status = 'Withdrawal canceled'
 
     def make_transfer(self):
         """Execute a transfer between accounts.
