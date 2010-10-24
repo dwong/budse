@@ -702,9 +702,9 @@ class BudseGUI(QtGui.QMainWindow):
         self.do_search.connect(self.search)
 
         # Calendar
-        self.ui.endDate.setSelectedDate(QtCore.QDate.currentDate())
-        self.ui.endDate.setMaximumDate(QtCore.QDate.currentDate())
-        self.ui.endDate.selectionChanged.connect(self.search)
+        # self.ui.endDate.setSelectedDate(QtCore.QDate.currentDate())
+        # self.ui.endDate.setMaximumDate(QtCore.QDate.currentDate())
+        # self.ui.endDate.selectionChanged.connect(self.search)
 
         # Menu Items
         self.ui.newDeposit.triggered.connect(self.make_deposit)
@@ -814,7 +814,7 @@ class BudseGUI(QtGui.QMainWindow):
 
     def reset(self):
         """Reset all of the inputs."""
-        self.ui.endDate.setSelectedDate(QtCore.QDate.currentDate())
+        # self.ui.endDate.setSelectedDate(QtCore.QDate.currentDate())
         self.ui.keywords.clear()
         if not self.whole_account.isChecked():
             self.whole_account.click()
@@ -880,10 +880,10 @@ class BudseGUI(QtGui.QMainWindow):
                 self.no_transactions()
         
         # Date
-        q_date = self.ui.endDate.selectedDate()
-        date = datetime.date(q_date.year(), q_date.month(), q_date.day())
-        if self.ui.endDate.selectedDate() != QtCore.QDate.currentDate():
-            query = query.filter(budse.Transaction.date == date)
+        # q_date = self.ui.endDate.selectedDate()
+        # date = datetime.date(q_date.year(), q_date.month(), q_date.day())
+        # if self.ui.endDate.selectedDate() != QtCore.QDate.currentDate():
+        #     query = query.filter(budse.Transaction.date == date)
 
         # Columns positions, this makes it easier to re-arrange them if desired
 #        undo_c = 0
