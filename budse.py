@@ -677,7 +677,7 @@ class Deposit(Transaction):
                 else:
                     net_accounts.append((a, amount))
             
-            if self.amount <= minimum_deposit:
+            if self.amount < minimum_deposit:
                 raise FundsException('Insufficient funds for whole account'
                                      ' deposit.  (Minimum $%0.2f)' %
                                      minimum_deposit)
@@ -711,17 +711,18 @@ class Deposit(Transaction):
             # Calculate net deposits
             if running_total > 0:
                 net = running_total
-                for (a, amt) in net_accounts:
-                    amount = net * amt
-                    if amount > 0:
-                        leftover += amount - round(amount, 2)
-                        amount = round(amount, 2)
-                        running_total -= amount
+                if net_accounts:
+                    for (a, amt) in net_accounts:
+                        amount = net * amt
+                        if amount > 0:
+                            leftover += amount - round(amount, 2)
+                            amount = round(amount, 2)
+                            running_total -= amount
+                            net_deposits.append((a, amount))
+                    else: 
+                        a, amount = net_deposits.pop()
+                        amount += round(leftover, 2)
                         net_deposits.append((a, amount))
-                else:
-                    a, amount = net_deposits.pop()
-                    amount += round(leftover, 2)
-                    net_deposits.append((a, amount))
                 
             # Process gross percentage accounts
             for account, amount in gross_deposits:

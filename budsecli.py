@@ -396,7 +396,7 @@ class BudseCLI(object):
             accounts = None
             if self._confirm('Deposit into multiple accounts?', False):
                 if not self._transact_for_whole_account():
-                    accounts = self._ask_accounts()
+                    accounts = self._ask_accounts(amount)
             else:
                 account = self._ask_account('Deposit into which account: ')
             deduction_tuples = None
@@ -1254,7 +1254,7 @@ class BudseCLI(object):
         if not gross_modified:
             self.status = 'Kept existing setting for affecting the gross amount'
 
-    def _ask_accounts(self, prompt='Include account for transaction: ',
+    def _ask_accounts(self, amount, prompt='Include account for transaction: ',
                      active_only=True, excluded_accounts=[]):
         """Query user for set of accounts
 
@@ -1350,7 +1350,8 @@ class BudseCLI(object):
             except budse.ParameterException:
                 pass
         formatted_accounts = []
-        for (a, ag, pf, amt) in self.harmless_reconfigure_accounts(accounts):
+        for (a, ag, pf, amt) in self.harmless_reconfigure_accounts(accounts,
+                                                                   amount):
             if pf == budse.Account.PERCENTAGE:
                 amt = budse._format_out_amount(amt)
             formatted_accounts.append((a, ag, pf, amt))
@@ -1528,13 +1529,15 @@ class BudseCLI(object):
         else:
             return False
 
-    def harmless_reconfigure_accounts(self, accounts, active_only=True):
+    def harmless_reconfigure_accounts(self, accounts, amount,
+                                      active_only=True):
         """Modify amounts for accounts to maintain requirements.
 
         Keyword arguments:
         accounts -- List of (Account, affect_gross, percentage_or_fixed,
                              amount) tuples to reconfigure
-    
+        amount -- Amount of deposit that is being reconfigured for
+        
         Returns:
         accounts -- The modified list of tuples (same tuple type as the
                     argument list)
@@ -1547,6 +1550,12 @@ class BudseCLI(object):
             return accounts
         fixed = budse.harmless_filter_accounts(accounts, fixed=True,
                                      percentage=False, active_only=active_only)
+        total_fixed = 0.00
+        for (a, ag, pf, amt) in fixed:
+            total_fixed += amt
+        if total_fixed >= amount:
+            gross_reconfig = net_reconfig = False # Bypass all reconfiguration
+        # TODO: if the fixed amount is more then allow the user to change here?
         gross_percentage = budse.harmless_filter_accounts(accounts, gross=True,
                                           fixed=False, active_only=active_only)
         net_percentage = budse.harmless_filter_accounts(accounts, gross=False,
