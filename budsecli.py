@@ -970,10 +970,10 @@ class BudseCLI(object):
                                                          new_description)
                             status = 'Deduction description changed'
                             deductions_changed = True
-                    elif option == '3' and self._confirm('Are you sure that '
-                           'you want to delete this deduction:\n%s - %s\n' %
+                    elif option == 3 and self._confirm('Are you sure that '
+                           'you want to delete this deduction:\n%s - %s?' %
                            (amount, description)):
-                        deductions.pop[int(choice)-1]
+                        deductions.pop(int(choice)-1)
                         status = 'Deduction deleted'
                         deductions_changed = True
                 else:
