@@ -449,7 +449,8 @@ class BudseCLI(object):
                 self.session.add(deposit)
                 self.session.commit()
                 if deposit.account is None:
-                    target = 'Whole Account'
+                    target = ('whole account' if accounts is None
+                              else 'multiple accounts')
                 else:
                     target = deposit.account.name
                 self.status = ('Successfully made deposit of $%0.2f '
