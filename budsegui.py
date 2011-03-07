@@ -693,7 +693,7 @@ class BudseGUI(QtGui.QMainWindow):
         self.ui.resetButton.clicked.connect(self.reset)
 
         # Keywords
-        self.ui.keywordLine.returnPressed.connect(self.add_keyword)
+        self.ui.keyword.returnPressed.connect(self.add_keyword)
         self.ui.addKeyword.clicked.connect(self.add_keyword)
         self.keyword_added.connect(self.ui.searchButton.click)
 
@@ -708,9 +708,13 @@ class BudseGUI(QtGui.QMainWindow):
 
         # Menu Items
         self.ui.newDeposit.triggered.connect(self.make_deposit)
+        self.ui.depositButton.clicked.connect(self.make_deposit)
         self.ui.newTransfer.triggered.connect(self.make_transfer)
+        self.ui.transferButton.clicked.connect(self.make_transfer)
         self.ui.newWithdrawal.triggered.connect(self.make_withdrawal)
+        self.ui.withdrawalButton.clicked.connect(self.make_withdrawal)
         self.ui.preferences.triggered.connect(self.change_preferences)
+        self.ui.preferencesButton.clicked.connect(self.change_preferences)
         self.transaction_made.connect(self.refresh)
 
         # Transaction(s)
@@ -806,10 +810,10 @@ class BudseGUI(QtGui.QMainWindow):
         """Move the keyword from the QLineEdit to the QTextEdit.
         """
         existing_words = self.ui.keywords.toPlainText()
-        new_keyword = self.ui.keywordLine.text()
+        new_keyword = self.ui.keyword.text()
         # Place each keyword on a new line
         self.ui.keywords.setPlainText('%s%s\n' % (existing_words, new_keyword))
-        self.ui.keywordLine.clear()
+        self.ui.keyword.clear()
         self.keyword_added.emit()
 
     def reset(self):
@@ -885,6 +889,15 @@ class BudseGUI(QtGui.QMainWindow):
         # if self.ui.endDate.selectedDate() != QtCore.QDate.currentDate():
         #     query = query.filter(budse.Transaction.date == date)
 
+        # Order
+        query = query.order_by(desc(budse.Transaction.date))
+
+        # Limit
+        try:
+            query = query.limit(int(self.ui.limit.currentText()))
+        except TypeError:
+            pass
+
         # Columns positions, this makes it easier to re-arrange them if desired
 #        undo_c = 0
         date_c = 0
@@ -906,7 +919,7 @@ class BudseGUI(QtGui.QMainWindow):
 
             row = 0
 	        #self.undo_buttons = QtGui.QButtonGroup()
-            for t in query.order_by(desc(budse.Transaction.date)).all():
+            for t in query.all():
                 # TODO Undo Button
                 # twi = QtGui.QTableWidgetItem('u')
                 # q = QtGui.QPushButton('undo', parent=twi)
