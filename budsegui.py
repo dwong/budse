@@ -355,19 +355,23 @@ class DepositDialog(QtGui.QDialog):
         self.ui.buttonBox.accepted.connect(self.save)
 
     def account_changed(self):
-        enable = False
+        enable = visible = False
         if self.ui.accountsCombo.currentIndex() == 0:
-            enable = True
-        self.change_table_status(self.ui.accountsTable, enable)
+            enable = visible = True
+        self.change_table_status(self.ui.accountsTable, enable, False, visible)
 
     def deductions_changed(self):
-        enable = False
         if self.ui.deductFromGross.isChecked():
-            enable = True
-        self.change_table_status(self.ui.deductionsTable, enable, True)
+            enable = visible = True
+            self.ui.amountLabel.setText('Gross Amount')
+            self.ui.grossLabel.setText('Deductions')
+        else:
+            enable = visible = False
+            self.ui.amountLabel.setText('Amount')
+            self.ui.grossLabel.setText('No deductions')
+        self.change_table_status(self.ui.deductionsTable, enable, True, visible)
 
-
-    def change_table_status(self, table, enable, editable_items=False):
+    def change_table_status(self, table, enable, editable_items=False, visible=True):
         if enable:
             twi_flags = (QtCore.Qt.ItemIsEnabled |
                          QtCore.Qt.ItemIsDragEnabled |
@@ -385,6 +389,8 @@ class DepositDialog(QtGui.QDialog):
                 twi = table.item(r, c)
                 twi.setFlags(twi_flags)
                 twi.setBackground(bg)
+
+        table.setVisible(visible)
         
     def save(self):
         errors = []
