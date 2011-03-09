@@ -65,7 +65,7 @@
         <number>15</number>
        </property>
        <item>
-        <widget class="QLabel" name="label">
+        <widget class="QLabel" name="amountLabel">
          <property name="minimumSize">
           <size>
            <width>100</width>
@@ -118,6 +118,13 @@
         </layout>
        </item>
       </layout>
+     </item>
+     <item>
+      <widget class="QCheckBox" name="deductFromGross">
+       <property name="text">
+        <string>Deduct From Gross Amount</string>
+       </property>
+      </widget>
      </item>
      <item>
       <layout class="QVBoxLayout" name="verticalLayout_3">
@@ -187,7 +194,30 @@
         </layout>
        </item>
        <item>
-        <widget class="QTableWidget" name="accountsTable"/>
+        <widget class="QFrame" name="frame_2">
+         <property name="sizePolicy">
+          <sizepolicy hsizetype="MinimumExpanding" vsizetype="MinimumExpanding">
+           <horstretch>0</horstretch>
+           <verstretch>0</verstretch>
+          </sizepolicy>
+         </property>
+         <property name="frameShape">
+          <enum>QFrame::StyledPanel</enum>
+         </property>
+         <property name="frameShadow">
+          <enum>QFrame::Raised</enum>
+         </property>
+         <widget class="QTableWidget" name="accountsTable">
+          <property name="geometry">
+           <rect>
+            <x>0</x>
+            <y>0</y>
+            <width>315</width>
+            <height>196</height>
+           </rect>
+          </property>
+         </widget>
+        </widget>
        </item>
       </layout>
      </item>
@@ -197,18 +227,46 @@
         <number>0</number>
        </property>
        <item>
-        <layout class="QHBoxLayout" name="horizontalLayout_5">
-         <item>
-          <widget class="QCheckBox" name="deductFromGross">
-           <property name="text">
-            <string>Deduct From Gross Amount</string>
-           </property>
-          </widget>
-         </item>
-        </layout>
+        <widget class="QLabel" name="grossLabel">
+         <property name="text">
+          <string>Deductions</string>
+         </property>
+        </widget>
        </item>
        <item>
-        <widget class="QTableWidget" name="deductionsTable"/>
+        <layout class="QHBoxLayout" name="horizontalLayout_5"/>
+       </item>
+       <item>
+        <widget class="QFrame" name="frame">
+         <property name="sizePolicy">
+          <sizepolicy hsizetype="MinimumExpanding" vsizetype="MinimumExpanding">
+           <horstretch>0</horstretch>
+           <verstretch>0</verstretch>
+          </sizepolicy>
+         </property>
+         <property name="frameShape">
+          <enum>QFrame::StyledPanel</enum>
+         </property>
+         <property name="frameShadow">
+          <enum>QFrame::Raised</enum>
+         </property>
+         <widget class="QTableWidget" name="deductionsTable">
+          <property name="geometry">
+           <rect>
+            <x>0</x>
+            <y>0</y>
+            <width>315</width>
+            <height>202</height>
+           </rect>
+          </property>
+          <property name="sizePolicy">
+           <sizepolicy hsizetype="MinimumExpanding" vsizetype="MinimumExpanding">
+            <horstretch>0</horstretch>
+            <verstretch>0</verstretch>
+           </sizepolicy>
+          </property>
+         </widget>
+        </widget>
        </item>
       </layout>
      </item>
