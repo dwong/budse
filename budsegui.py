@@ -524,6 +524,7 @@ class PreferencesDialog(QtGui.QDialog):
         # Slots
         self.ui.add_account.clicked.connect(self.add_account)
         self.ui.add_deduction.clicked.connect(self.add_deduction)
+        self.ui.delete_deduction.clicked.connect(self.delete_deduction)
 
         # Username
         self.ui.username.setText(self.user.name)
@@ -556,6 +557,11 @@ class PreferencesDialog(QtGui.QDialog):
         for a, d in self.user.deductions:
             self.insert_deduction(row, d, a)
             row += 1
+
+        self.dt.resizeRowsToContents()
+
+        self.dt.horizontalHeader().setResizeMode(
+            QtGui.QHeaderView.Stretch)
 
         # TODO check out doc.trolltech.com/stylesheet-examples.html
         #      for help with styling (e.g., text-align, width, etc)
@@ -611,7 +617,6 @@ class PreferencesDialog(QtGui.QDialog):
     def insert_deduction(self, row, description, amount):
         dc = 0 # Description column
         ac = 1 # Amount column
-        rc = 2 # Remove column
         
         # TODO right now each row is identified by its description
         #      is it worth it to make a unique ID so that there can be
@@ -619,20 +624,17 @@ class PreferencesDialog(QtGui.QDialog):
         
         self.dt.setRowCount(self.dt.rowCount() + 1)
         # Description
-#        print(self.dt.size())
         twi = QtGui.QTableWidgetItem(description)
         twi.setTextAlignment(QtCore.Qt.AlignLeft)
-#        twi.setSizeHint(QtCore.QSize(50, 10))
         self.dt.setItem(row, dc, twi)
         # Amount
         twi = MonetaryTableWidgetItem(amount)
         twi.setTextAlignment(QtCore.Qt.AlignHCenter)
         self.dt.setItem(row, ac, twi)
-        # Delete
-        b = QtGui.QCheckBox()
-        self.dt.setCellWidget(row, rc, b)
-        # TODO set the size of the horizontal header based on the length of the contents
         self.dt.resizeRowsToContents()
+
+    def delete_deduction(self):
+        self.dt.removeRow(self.dt.currentRow())
 
     def save(self):
         errors = []
