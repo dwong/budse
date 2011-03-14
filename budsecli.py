@@ -1372,15 +1372,14 @@ class BudseCLI(object):
         Account object
 
         """
+        query = self.session.query(budse.Account).\
+                filter(budse.Account.user == self.user)
+        if (len(exclude_accounts)):
+            query = query.filter(~budse.Account.id.in_(exclude_accounts))
         if active_only:
-            accounts = self.session.query(budse.Account).\
-                       filter(budse.Account.user == self.user).\
-                       filter(budse.Account.status == True).\
-                       filter(~budse.Account.id.in_(exclude_accounts)).all()
-        else:
-            accounts = self.session.query(budse.Account).\
-                       filter(budse.Account.user == self.user).\
-                       filter(~budse.Account.id.in_(exclude_accounts)).all()
+            query = query.filter(budse.Account.status == True)
+        accounts = query.all()
+
         if not len(accounts):
             raise budse.ParameterException('No accounts in list')
         clear_screen()
