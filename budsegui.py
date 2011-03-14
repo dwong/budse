@@ -513,6 +513,11 @@ class WithdrawalDialog(QtGui.QDialog):
                 print(e)
 
 class PreferencesDialog(QtGui.QDialog):
+    nc = 0 # Name column
+    vc = 1 # Value column
+    tc = 2 # Type column
+    gc = 3 # Gross column
+    ac = 4 # Active column
 
     def __init__(self, user, session):
         QtGui.QDialog.__init__(self)
@@ -525,16 +530,10 @@ class PreferencesDialog(QtGui.QDialog):
         self.ui.add_account.clicked.connect(self.add_account)
         self.ui.add_deduction.clicked.connect(self.add_deduction)
         self.ui.delete_deduction.clicked.connect(self.delete_deduction)
+        self.ui.whole_account.clicked.connect(self.whole_account_changed)
 
         # Username
         self.ui.username.setText(self.user.name)
-
-        # TODO: if not whole_account_actions then do not display amounts
-        #       or types
-
-        # TO TEST: Whole account settings
-        if self.user.whole_account_actions:
-            self.ui.whole_account.setChecked(True)
 
         # TODO keep track of the identity of each row, either adding
         #      a hidden ID or storing the original values in an internal
@@ -550,6 +549,10 @@ class PreferencesDialog(QtGui.QDialog):
                                 a.percentage_or_fixed, a.amount, a.status)
             row += 1
            
+        # Whole Account Actions
+        if self.user.whole_account_actions:
+            self.ui.whole_account.click()
+
         # Deductions
         self.dt = self.ui.deductionsTable
 
@@ -557,7 +560,6 @@ class PreferencesDialog(QtGui.QDialog):
         for a, d in self.user.deductions:
             self.insert_deduction(row, d, a)
             row += 1
-
         self.dt.resizeRowsToContents()
 
         self.dt.horizontalHeader().setResizeMode(
@@ -566,28 +568,29 @@ class PreferencesDialog(QtGui.QDialog):
         # TODO check out doc.trolltech.com/stylesheet-examples.html
         #      for help with styling (e.g., text-align, width, etc)
 
+    def whole_account_changed(self):
+        hidden = False if self.ui.whole_account.isChecked() else True
+
+        self.at.setColumnHidden(self.vc, hidden)
+        self.at.setColumnHidden(self.tc, hidden)
+        self.at.setColumnHidden(self.gc, hidden)
+
     def add_account(self):
         self.insert_account(self.at.rowCount(), -1, '', False,
                             budse.Account.PERCENTAGE, 0, True)
 
     def insert_account(self, row, id, name, gross, acct_type, amount, active):
-        nc = 0 # Name column
-        vc = 1 # Value column
-        tc = 2 # Type column
-        gc = 3 # Gross column
-        ac = 4 # Active column
-
         self.at.setRowCount(self.at.rowCount() + 1)
 
         # Account
-        self.at.setItem(row, nc, QtGui.QTableWidgetItem(name))
+        self.at.setItem(row, self.nc, QtGui.QTableWidgetItem(name))
         # Affect gross
         gross_or_net = QtGui.QComboBox()
         gross_or_net.addItem('Net', 0)
         gross_or_net.addItem('Gross', 1)
         if gross:
             gross_or_net.setCurrentIndex(1)
-        self.at.setCellWidget(row, gc, gross_or_net)
+        self.at.setCellWidget(row, self.gc, gross_or_net)
         # Amount and Accont type
         acct_type = QtGui.QComboBox()
         acct_type.addItem('Percentage', 0)
@@ -599,13 +602,13 @@ class PreferencesDialog(QtGui.QDialog):
             twi = MonetaryTableWidgetItem(amount)
             acct_type.setCurrentIndex(1)
         twi.setTextAlignment(QtCore.Qt.AlignHCenter)
-        self.at.setCellWidget(row, tc, acct_type)
-        self.at.setItem(row, vc, twi)
+        self.at.setCellWidget(row, self.tc, acct_type)
+        self.at.setItem(row, self.vc, twi)
         # Active checkbox
         cb = QtGui.QCheckBox()
         if active:
             cb.setChecked(True)
-        self.at.setCellWidget(row, ac, cb)
+        self.at.setCellWidget(row, self.ac, cb)
         self.active_group.addButton(cb)
         # TODO: need the button group or the ID?
 #        self.active_group.setId(cb, id)
