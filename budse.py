@@ -700,6 +700,7 @@ class Deposit(Transaction):
             for (a, amt) in fixed_accounts:
                 if running_total > 0:
                     if amt > 0:
+                        leftover += amount - round(amount, 2)
                         running_total -= amt
                         fixed_deposits.append((a, amt))
                     elif amt < 0:
@@ -721,7 +722,9 @@ class Deposit(Transaction):
                             net_deposits.append((a, amount))
                     else: 
                         a, amount = net_deposits.pop()
-                        amount += round(leftover, 2)
+                        print('leftover before: %s; leftover: %s' % (amount, leftover))
+                        amount += round(leftover, 2) + round(running_total, 2)
+                        print('leftover after: %s, %s' % (a, amount))
                         net_deposits.append((a, amount))
                 
             # Process gross percentage accounts
