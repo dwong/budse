@@ -82,7 +82,7 @@ fun = ('Non-Sequiturs Rule The Day', 'GTWW',
        'Give me your money, and you can exit in peace',
        "Well I say, I've never thought that before!",
        'Watch out for one-eyed Willie', 'HEY YOU GUYYYS',
-       'I want to eat your M-O-N-E-Y', 'FTOAYW',
+       'I want to eat your M-O-N-E-Y', 'FTOAYW', #Figure This Out And You Win
        "If you're not careful, you can poke an eye out.",
        'Spam for me, eggs for you', '16 TON WEIGHT',
        'Psst, Robinson Crusoe never made it out',
@@ -722,9 +722,7 @@ class Deposit(Transaction):
                             net_deposits.append((a, amount))
                     else: 
                         a, amount = net_deposits.pop()
-                        print('leftover before: %s; leftover: %s' % (amount, leftover))
                         amount += round(leftover, 2) + round(running_total, 2)
-                        print('leftover after: %s, %s' % (a, amount))
                         net_deposits.append((a, amount))
                 
             # Process gross percentage accounts
