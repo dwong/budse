@@ -682,26 +682,27 @@ class Deposit(Transaction):
                                      ' deposit.  (Minimum $%0.2f)' %
                                      minimum_deposit)
 
-            leftover = 0.00
+            total = 0.00
             gross = running_total = self.amount
             # Calculate gross deposits
             for (a, amt) in gross_accounts:
                 amount = gross * amt
                 if amount > 0:
-                    leftover += amount - round(amount, 2)
                     amount = round(amount, 2)
+                    total += amount
                     running_total -= amount
                     gross_deposits.append((a, amount))
 
             # Execute deductions
             running_total -= deduction_total
+            total += deduction_total
 
             # Calculate fixed deposits
             for (a, amt) in fixed_accounts:
                 if running_total > 0:
                     if amt > 0:
-                        leftover += amount - round(amount, 2)
                         running_total -= amt
+                        total += amt
                         fixed_deposits.append((a, amt))
                     elif amt < 0:
                         raise DepositException('Invalid negative deposit')
@@ -716,14 +717,16 @@ class Deposit(Transaction):
                     for (a, amt) in net_accounts:
                         amount = net * amt
                         if amount > 0:
-                            leftover += amount - round(amount, 2)
                             amount = round(amount, 2)
+                            total += amount
                             running_total -= amount
                             net_deposits.append((a, amount))
                     else: 
-                        a, amount = net_deposits.pop()
-                        amount += round(leftover, 2) + round(running_total, 2)
-                        net_deposits.append((a, amount))
+                        difference = gross - total
+                        if difference != 0.00:
+                            a, amount = net_deposits.pop()
+                            amount += difference
+                            net_deposits.append((a, amount))
                 
             # Process gross percentage accounts
             for account, amount in gross_deposits:
