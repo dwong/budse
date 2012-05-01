@@ -682,7 +682,8 @@ class BudseCLI(object):
         extension = 'xls'
         today = datetime.datetime.today()
         if today.day == 1:
-            default = today + datetime.timedelta(month=-1)
+            yesterday = today + datetime.timedelta(days=-1)
+            default = datetime.date(yesterday.year, yesterday.month, 1)
         else:
             default = datetime.date(today.year, today.month, 1)
         begin_date = self._ask_date(prompt='Date of start of report',
