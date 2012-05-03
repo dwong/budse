@@ -373,7 +373,8 @@ class Transaction(Base):
     user = relation('User', backref=backref('transactions', order_by=id))
     account = relation('Account', backref=backref('transactions', order_by=id))
     children = relation('Transaction', primaryjoin=_parent == id, cascade='all',
-                        backref=backref('parent', remote_side=id))
+                        backref=backref('parent', remote_side=id),
+                        lazy='joined', join_depth=1)
     initial = False
 
     def __init__(self, date, user, description=None, amount=0.00, account=None,
