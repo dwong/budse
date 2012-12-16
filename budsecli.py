@@ -248,9 +248,12 @@ class BudseCLI(object):
                 order_by(desc(budse.Transaction.date))
         elif choice == '3':
             id = self._ask_amount('Unique ID of transaction: ', int)
-            return [self.session.query(budse.Transaction).\
-                filter(budse.Transaction.id == id).\
-                filter(budse.Transaction.parent == None).one()]
+            try:
+                return [self.session.query(budse.Transaction).\
+                        filter(budse.Transaction.id == id).\
+                        filter(budse.Transaction.parent == None).one()]
+            except NoResultFound:
+                return None
         elif choice == '4':
             done = False
             print 'Transaction description matching any of the keywords:\n'
