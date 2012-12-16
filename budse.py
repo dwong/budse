@@ -178,7 +178,7 @@ class Account(Base):
     def _get_total(self):
         return _format_out_amount(self._total)
     def _set_total(self, total):
-        self._total = int(round(total * 100))
+        self._total = _format_db_amount(total)
     total = synonym('_total', descriptor=property(_get_total, _set_total))
     
     def __repr__(self):
@@ -859,6 +859,30 @@ def filter_accounts(accounts, fixed=True, percentage=True, gross=None,
         matching = [account for account in accounts \
                         for id in id_values if account.id == id]
     return matching
+
+def recalculate_account_totals(accounts):
+    """Recalculate the account totals based on the transaction log.
+    """
+    amounts = [] # Set of tuples (Account, old total, new total)
+    for account in accounts:
+        deposit_sum = session.query(func.sum(Transaction.amount).\
+                                    label('deposit_sum')).\
+                            filter(Transaction.account == account).\
+                            filter(Transaction.status == True).\
+                            filter(Transaction.action == Transaction.DEPOSIT).\
+                            one().deposit_sum
+        withdraw_sum = session.query(func.sum(Transaction.amount).\
+                                     label('withdrawal_sum')).\
+                         filter(Transaction.account == account).\
+                         filter(Transaction.status == True).\
+                         filter(Transaction.action == Transaction.WITHDRAWAL).\
+                         one().withdrawal_sum
+        if debug:
+            print('Deposits: %s; Withdrawals: %s' % (deposit_sum, withdraw_sum))
+        new_total = ((deposit_sum if deposit_sum is not None else 0) -
+                     (withdraw_sum if withdraw_sum is not None else 0))
+        amounts.append((account, account.total, _format_out_amount(new_total)))
+    return amounts
 
 def harmless_filter_accounts(accounts, fixed=True, percentage=True,
                              gross=None, active_only=True, id_values=[]):

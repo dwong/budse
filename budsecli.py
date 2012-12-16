@@ -814,6 +814,7 @@ class BudseCLI(object):
                       '1 - Modify Existing Accounts\n'
                       '2 - Add New Account\n3 - Login Name\n4 - %s\n'
                       '5 - Deductions\n6 - Whole Account Actions\n'
+                      '7 - Recalculate Account Totals\n'
                       '%s\n%s\n\nAction: ') %
                       (status_modification, BudseCLI.meta_actions, self.status))
             clear_screen()
@@ -831,6 +832,8 @@ class BudseCLI(object):
                     self.modify_user_deductions(self.user)
                 elif action == '6':
                     self.modify_user_whole(self.user)
+                elif action == '7':
+                    self.recalculate_totals()
                 else:
                     self.status = ('Invalid action - %s' %
                                    random.choice(budse.fun))
@@ -1010,6 +1013,35 @@ class BudseCLI(object):
         else:
             user.whole_account_actions = self._confirm('Activate whole accou'
                                                        'nt actions?', True)
+
+    def recalculate_totals(self):
+        """Recalculate the user's account totals.
+
+        This can be useful if there is a possible discrepency since
+        the transaction log should be more reliable than the account total.
+        """
+        accounts = session.query(budse.Account).\
+                           filter(budse.Account.status == True).\
+                           filter(budse.Account.user == self.user).all()
+        recalculated = budse.recalculate_account_totals(accounts)
+        different = []
+        clear_screen()
+        print('Recalculated the following:')
+        for recalculated_tuple in recalculated:
+            account, old, new = recalculated_tuple
+            print('    %s: %0.2f instead of the existing %0.2f%s' %
+                  (account.name, new, old,
+                   ' - DIFFERENCE!' if old != new else ''))
+            if old != new:
+                different.append(recalculated_tuple)
+        if self._confirm('Save recalculated values?', False):
+            for recalculated_tuple in different:
+                account, old, new = recalculated_tuple
+                account.total = new
+            self.session.commit()
+            self.status = 'Recalculated account totals'
+        else:
+            self.status = 'Account totals not recalculated'
 
     def modify_account(self):
         """Allow the user to modify aspects of an existing account."""
