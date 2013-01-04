@@ -1,5 +1,5 @@
 import os
-from flask_root.budse import db
+from flask_root.application import db
 
 class User(db.Model):
     """The user that is accessing the library."""
@@ -10,7 +10,6 @@ class User(db.Model):
     _name = Column('user_name', String, nullable=False)
     status = Column(Boolean, default=True)
     _last_login = Column('last_login', DateTime)
-    _deductions = Column('automatic_deductions', String)
     whole_account_actions = Column(Boolean)
 
     def _get_name(self):
@@ -34,7 +33,6 @@ class User(db.Model):
         """
         self.name = name
         self.whole_account_actions = whole
-        self.deductions = deductions
         self.accounts = []
         if accounts is not None:
             for account in accounts:
@@ -55,56 +53,6 @@ class User(db.Model):
         except AttributeError:
             return 'Never'
         
-    # General delimiters that are used within the string that is stored
-    # in the database.
-    # This can be a problem if the user attempts to use them in the deduction
-    # description
-    _deduction_delimiter = ';'
-    _deduction_separater = ':'
-    def _get_deductions(self):
-        """Parse deductions in database and convert to a list of tuples.
-
-        Deductions in database should be stored as a continuous list of:
-        <amount>:<description>;
-
-        Example:
-        10:Taxes;20:More taxes;
-        
-        Deductions are currently only allowed to be a fixed amount.  
-        Allowing percentage amounts is a possibility in the future.
-
-        Returns:
-        List of (amount, description) tuples
-
-        """
-        all_deductions = self._deductions
-        deductions = []
-        while all_deductions.find(self._deduction_delimiter) > 0:
-            separater_index = all_deductions.find(self._deduction_separater)    
-            delimiter_index = all_deductions.find(self._deduction_delimiter)
-            amount = float(all_deductions[:separater_index])
-            description = all_deductions[separater_index+1:delimiter_index]
-            deductions.append((amount, description))
-            all_deductions = all_deductions[delimiter_index+1:]
-        return deductions
-    def _set_deductions(self, deductions):
-        """Convert list of deductions into the proper format.
-
-        Keyword arguments:
-        deductions -- List of (amount, description) tuples
-
-        """
-        deduction_repr = ''
-        if deductions is not None:
-            for amount, description in deductions:
-                deduction_repr += '%0.2f%s%s%s' % (amount,
-                                                   self._deduction_separater,
-                                                   description,
-                                                   self._deduction_delimiter)
-        self._deductions = deduction_repr
-    deductions = synonym('_deductions', descriptor=property(_get_deductions,
-                                                            _set_deductions))
-
     def __repr__(self):
         return ('%s %s %s %s' % (self.__class__.__name__, self.name,
                                  self.whole_account_actions, self.deductions,
@@ -125,5 +73,3 @@ class User(db.Model):
                 self.whole_account_actions, str_delimiter, tag_delimiter,
                 self.last_login, str_delimiter, account_repr, tag_delimiter,
                 self.status))
-
-
