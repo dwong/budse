@@ -1,5 +1,5 @@
 import os
-from flask_root.application import db
+from flask.ext.sqlalchemy import SQLAlchemy
 
 class User(db.Model):
     """The user that is accessing the library."""
