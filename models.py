@@ -383,7 +383,7 @@ class Transfer(Transaction):
                '%sDescription: %s%sActive: %s' %
                (transfer_type, delimiter, self.amount, delimiter,
                 self.date.strftime('%m/%d/%Y'), delimiter, account_info,
-                self.description, delimiter, self.status))
+                self.description, delimiter, self.active))
         
 class Deduction(Transaction):
     """A deduction is subtracted from the gross amount of a Deposit."""
