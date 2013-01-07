@@ -8,6 +8,7 @@ from sqlalchemy.orm import synonym
 from sqlalchemy.sql.expression import func
 from sqlalchemy.orm.exc import NoResultFound
 from comparator import UpperComparator
+from datetime import datetime
 from app import db
 
 class User(db.Model):
@@ -212,18 +213,18 @@ class Transaction(db.Model):
         self.description = description
         self.parent = parent
         self.initial = True
-        self.timestamp = datetime.datetime.now()
+        self.timestamp = datetime.now()
 
         if not duplicate_override:
             duplicates = []
-            for t in session.query(Transaction).\
+            for t in db.session.query(Transaction).\
                 filter(or_(Transaction.parent != parent,
                            Transaction.parent == None)).\
                 filter(Transaction.action != Transaction.TRANSFER).\
                 filter(Transaction.action != Transaction.DEDUCTION).\
                 filter(Transaction.action != Transaction.INFORMATIONAL).\
                 filter(Transaction.date == date).\
-                filter(Transaction.status == True).\
+                filter(Transaction.active).\
                 filter(Transaction.account == account).\
                 filter(Transaction.amount ==
                        _format_db_amount(amount)).all():
@@ -255,12 +256,12 @@ class Transaction(db.Model):
         if not self.active:
             ## TODO: self.initial seems unnecessary
             if self.parent is None and self.initial:
-                self._status = True
+                self._active = True
                 self.initial = False
                 for t in self.children:
                     t.commit()
             else: # This comes from the transaction's parent
-                self._status = True
+                self._active = True
                 for t in self.children: # Maybe support multiple nesting in the future?
                     t.commit()
 
@@ -304,28 +305,30 @@ class Transaction(db.Model):
         deduction_repr = subdeposit_repr = ''
         if self.parent is None:
             deduction_repr = subdeposit_repr = subwithdrawal_repr = ''
-            for deduction in session.query(Deduction).\
-                    filter(Deduction.parent == self).all():
+            deductions = db.session.query(Deduction).\
+                    filter(Deduction.parent == self).all()
+            for deduction in deductions:
                 deduction_repr += ('(Amount: %s, Description: %s)' %
                                    (deduction.amount, deduction.description))
             else:
-                deduction_repr = 'Deductions: [%s]%s' % (deduction_repr,
-                                                         delimiter)
-            for deposit in session.query(Deposit).\
-                    filter(Transaction.parent == self).all():
+                deduction_repr = ('' if not deductions else 'Deductions: [%s]'
+                                  '%s' % (deduction_repr, delimiter))
+            subdeposits = db.session.query(Deposit).\
+                    filter(Transaction.parent == self).all()
+            for deposit in subdeposits:
                 subdeposit_repr += ('(Account: %s, Amount: %s,'
                                     'Description: %s)' %
                                     (deposit.account.name, deposit.amount,
                                      deposit.description))
             else:
-                subdeposit_repr = 'Deposits: [%s]%s' % (subdeposit_repr,
-                                                         delimiter)
-        return('Type: %s%sAmount: $%0.2f%sTransaction Date: %s%sAccount: '
-               '%s%sDescription: %s%s%s%sActive: %s' %
-               (action_type, delimiter, self.amount, delimiter,
-                self.date.strftime('', delimiter), account, delimiter,
-                self.description, delimiter, deduction_repr, subdeposit_repr, 
-                self.active))
+                subdeposit_repr = ('' if not subdeposits else 'Deposits: [%s]'
+                                   '%s' % (subdeposit_repr, delimiter))
+        return ('Type: %s%sAmount: $%0.2f%sTransaction Date: %s%sAccount: '
+                '%s%sDescription: %s%s%s%sActive: %s' %
+                (action_type, delimiter, self.amount, delimiter,
+                 self.date.strftime('', delimiter), account, delimiter,
+                 self.description, delimiter, deduction_repr, subdeposit_repr, 
+                 self.active))
 
 class Transfer(Transaction):
     """A deposit and withdrawal."""
@@ -353,20 +356,20 @@ class Transfer(Transaction):
                                               self.description)
         self.to_account = to_account
         self.from_account = from_account
-        session.add(Withdrawal(user=user, amount=amount, date=date,
-                               parent=self, description=description,
-                               account=from_account,
+        db.session.add(Withdrawal(user=user, amount=amount, date=date,
+                                  parent=self, description=description,
+                                  account=from_account,
+                                  duplicate_override=duplicate_override))
+        db.session.add(Deposit(user=user, amount=amount, date=date, parent=self,
+                               description=description, account=to_account,
                                duplicate_override=duplicate_override))
-        session.add(Deposit(user=user, amount=amount, date=date, parent=self,
-                            description=description, account=to_account,
-                            duplicate_override=duplicate_override))
 
     def __str__(self):
         delimiter = '\n'
         try:
-            from_account = session.query(Withdrawal).\
+            from_account = db.session.query(Withdrawal).\
                            filter(Withdrawal.parent == self).one().account
-            to_account = session.query(Deposit).\
+            to_account = db.session.query(Deposit).\
                          filter(Deposit.parent == self).one().account
         except NoResultFound:
             transfer_type = 'INVALID Transfer'
@@ -382,6 +385,15 @@ class Transfer(Transaction):
                 self.date.strftime('%m/%d/%Y'), delimiter, account_info,
                 self.description, delimiter, self.status))
         
+class Deduction(Transaction):
+    """A deduction is subtracted from the gross amount of a Deposit."""
+
+    __mapper_args__ = {'polymorphic_identity':Transaction.DEDUCTION}
+
+    def __init__(self, user, amount, date, parent=None, description=None):
+        Transaction.__init__(self, user=user, amount=amount, date=date,
+                             parent=parent, description=description)
+
 def _format_db_amount(amount):
     return int(round(float(amount) * 100))
 
