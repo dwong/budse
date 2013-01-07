@@ -327,6 +327,61 @@ class Transaction(db.Model):
                 self.description, delimiter, deduction_repr, subdeposit_repr, 
                 self.active))
 
+class Transfer(Transaction):
+    """A deposit and withdrawal."""
+    
+    __mapper_args__ = {'polymorphic_identity':Transaction.TRANSFER}
+
+    def __init__(self, user, amount, date, to_account, from_account,
+                 description=None, duplicate_override=False):
+        """A deposit from one account combined with a withdrawal from another.
+
+        Keyword arguments:
+        user -- User
+        amount -- Amount of transaction
+        date -- Transaction date
+        to_account -- Account to deposit into
+        from_account -- Account to withdraw from
+        description -- User description of transaction (default None)
+        duplicate_override -- Do not check for duplicates (default False)
+
+        """
+        Transaction.__init__(self, user=user, date=date, 
+                             description=description, amount=amount)
+        self.description = '[%s -> %s] %s' % (from_account.name,
+                                              to_account.name,
+                                              self.description)
+        self.to_account = to_account
+        self.from_account = from_account
+        session.add(Withdrawal(user=user, amount=amount, date=date,
+                               parent=self, description=description,
+                               account=from_account,
+                               duplicate_override=duplicate_override))
+        session.add(Deposit(user=user, amount=amount, date=date, parent=self,
+                            description=description, account=to_account,
+                            duplicate_override=duplicate_override))
+
+    def __str__(self):
+        delimiter = '\n'
+        try:
+            from_account = session.query(Withdrawal).\
+                           filter(Withdrawal.parent == self).one().account
+            to_account = session.query(Deposit).\
+                         filter(Deposit.parent == self).one().account
+        except NoResultFound:
+            transfer_type = 'INVALID Transfer'
+            account_info = ''
+        else:
+            transfer_type = 'Transfer'
+            account_info = ('Account From: %s%sAccount To: %s%s' %
+                            (from_account.name, delimiter,
+                             to_account.name, delimiter))
+        return('Type: %s%sAmount: $%0.2f%sTransaction Date: %s%s'
+               '%sDescription: %s%sActive: %s' %
+               (transfer_type, delimiter, self.amount, delimiter,
+                self.date.strftime('%m/%d/%Y'), delimiter, account_info,
+                self.description, delimiter, self.status))
+        
 def _format_db_amount(amount):
     return int(round(float(amount) * 100))
 
