@@ -113,27 +113,30 @@ class Account(db.Model):
                 (self.name, delimiter, self.description, delimiter,
                  self.total, delimiter, self.active))
     
-class AutoDeposit(db.Model):
-    """An automatic deposit to divide a deposit into accounts."""
+class SubDeposit(db.Model):
+    """An sub-deposit to divide a deposit into accounts.
+
+    Stored as a group
+    """
     
     # Pseudo class variables that have meaning in the database
     PERCENTAGE = 'percentage'
     FIXED = 'fixed'
 
-    __tablename__ = 'auto_deposits'
+    __tablename__ = 'sub_deposits'
 
     id = Column(Integer, primary_key=True)
     _user = Column('user_id', Integer, ForeignKey('users.id'))
     _account = Column('account_id', Integer, ForeignKey('accounts.id'))
     _amount = Column('amount', Integer)
     description = Column('description', String)
-    group = Column(String) # User-defined name for a group of auto deposits
+    group = Column(String) # User-defined name for a group of sub-deposits
     active = Column(Boolean, default=True)
     percentage_or_fixed = Column(String)
     affect_gross = Column(Boolean)
     
-    user = relation('User', backref=backref('auto_deposits'))
-    account = relation('Account', backref=backref('auto_deposits'))
+    user = relation('User', backref=backref('sub_deposits'))
+    account = relation('Account', backref=backref('sub_deposits'))
     
     def __init__(self, user, account, amount, description=None, group=None, 
                  percentage_or_fixed=None, affect_gross=False):
@@ -144,11 +147,11 @@ class AutoDeposit(db.Model):
         self.group = group
         self.percentage_or_fixed = (percentage_or_fixed
                                     if percentage_or_fixed is not None
-                                    else AutoDeposit.PERCENTAGE)
+                                    else SubDeposit.PERCENTAGE)
         self.affect_gross = affect_gross
         
     def _get_amount(self):
-        if self.percentage_or_fixed == AutoDeposit.PERCENTAGE:
+        if self.percentage_or_fixed == SubDeposit.PERCENTAGE:
             return _format_out_amount(self._amount, 10000)
         else:
             return _format_out_amount(self._amount)
