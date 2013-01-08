@@ -397,6 +397,143 @@ class Deduction(Transaction):
         Transaction.__init__(self, user=user, amount=amount, date=date,
                              parent=parent, description=description)
 
+class Deposit(Transaction):
+    """Amount to be placed into one or all of the user's Accounts."""
+
+    __mapper_args__ = {'polymorphic_identity':Transaction.DEPOSIT}
+
+    def __init__(self, user, amount, date, sub_deposits, description=None,
+                 deductions=None, parent=None, duplicate_override=False):
+        """An object representation of a deposit transaction.
+
+        Keyword arguments:
+        user -- User
+        amount -- Initial amount of transaction
+        date -- Transaction date
+        description -- User description of transaction (default None)
+        deductions -- List of Deduction objects (default None)
+        parent -- Transaction object that this Deposit is a child of
+            (default None)
+        duplicate_override -- Do not check for duplicates (default False)
+        sub_deposits -- List of SubDeposit objects (cannot be an empty list)
+
+        When a multiple account deposit is broken down:
+        1) Percentage amounts on the gross
+        2) Fixed amounts
+        3) Percentage amounts on the net
+
+        """
+        account = sub_deposits.pop() if len(sub_deposits) == 1 else None
+        
+        Transaction.__init__(self, user=user, amount=amount, account=account,
+                             description=description, date=date, parent=parent,
+                             duplicate_override=duplicate_override)
+        
+        # Calculate deductions
+        deduction_total = 0.00
+        self.deductions = deductions
+        if self.deductions is not None:
+            for deduction in self.deductions:
+                deduction_total += deduction.amount
+                deduction.parent = self
+            if amount < deduction_total:
+                raise FundsException('Deductions are more than the deposit')
+            
+        if account is not None:
+            self.amount -= deduction_total
+            self.account.total += self.amount
+        else:
+            # last ditch check
+            if accounts is None or len(accounts) == 0:
+                raise DepositException('Accounts are required.')
+            
+            self.deposits = []
+            
+            # lists of separated accounts
+            gross_accounts = []
+            fixed_accounts = []
+            net_accounts = []
+            # lists of (Account, amount) tuples
+            deposits = []
+
+            # Calculate minimum deposit before embarking
+            minimum_deposit = deduction_total
+            for sd in sub_deposits:
+                # Fixed
+                if s.percentage_or_fixed == SubDeposit.FIXED:
+                    minimum_deposit += s.amount
+                # Percentage, gross
+                elif s.affect_gross:
+                    minimum_deposit += self.amount * amount
+            
+            if self.amount < minimum_deposit:
+                raise FundsException('Insufficient funds for whole account'
+                                     ' deposit.  (Minimum $%0.2f)' %
+                                     minimum_deposit)
+
+            total = 0.00 # Verify that every cent is getting deposited!
+            gross = running_total = self.amount
+            
+            # Calculate gross deposits
+            for gsd in [sd for sd in sub_deposits
+                        if sd.percentage_or_fixed == SubDeposit.PERCENTAGE and
+                        sd.affect_gross]:
+                amount = gross * gsd.amount
+                if amount > 0:
+                    amount = round(amount, 2)
+                    total += amount
+                    running_total -= amount
+                    deposits.append((gsd.account, amount))
+
+            # Execute deductions
+            running_total -= deduction_total
+            total += deduction_total
+
+            # Calculate fixed deposits
+            for fsd in [sd for sd in sub_deposits
+                        if sd.percentage_or_fixed == SubDeposit.FIXED]:
+                if running_total > 0:
+                    if fsd.amount >= 0:
+                        running_total -= fsd.amount
+                        total += fsd.amount
+                        deposits.append((fsd.account, fsd.amount))
+                    else:
+                        raise DepositException('Invalid negative deposit')
+                else:
+                    raise FundsException('Insufficient funds available for '
+                                         'specified deposits')
+                
+            # Calculate net deposits
+            if running_total > 0:
+                net = running_total
+                for nsd in [sd for sd in sub_deposits
+                            if sd.PERCENTAGE_OR_FIXED == SubDeposit.PERCENTAGE
+                            and not sd.affect_gross]:
+                    amount = net * nsd.amount
+                    if amount > 0:
+                        amount = round(amount, 2)
+                        total += amount
+                        running_total -= amount
+                        deposits.append((nsd.account, amount))
+
+            # Sanity check on the deposit to ensure that everything is
+            # accounted for.  The difference SHOULD always be zero, but
+            # rounding is a beast (especially with percentages).
+            difference = gross - total
+            if difference != 0.00:
+                account, amount = deposits.pop()
+                amount += difference
+                deposits.append((account, amount))
+                
+            # Execute the deposits
+            for account, amount in deposits:
+                deposit = Deposit(user=self.user, amount=amount, parent=self,
+                                  date=self.date, account=account, 
+                                  description=self.description,
+                                  duplicate_override=duplicate_override)
+                db.session.add(deposit)
+                self.deposits.append(deposit)
+
 def _format_db_amount(amount):
     return int(round(float(amount) * 100))
 
