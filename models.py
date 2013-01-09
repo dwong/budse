@@ -534,3 +534,40 @@ def _format_db_amount(amount):
 
 def _format_out_amount(amount, divisor=100):
     return float(amount) / divisor if amount is not None else 0
+
+class BudseException(Exception):
+    """Base class for exceptions in this module."""
+    pass
+
+class DepositException(BudseException):
+    """General invalid deposit."""
+    def __init__(self, expression):
+        self.expression = expression
+
+    def __str__(self):
+        return str(self.expression)
+
+class FundsException(BudseException):
+    """Incorrect funds for a specified action."""
+    def __init__(self, expression):
+        self.expression = expression
+
+    def __str__(self):
+        return str(self.expression)
+
+class ParameterException(BudseException):
+    """Parameters are not as expected."""
+    def __init__(self, expression):
+        self.expression = expression
+
+    def __str__(self):
+        return str(self.expression)
+
+class DuplicateException(BudseException):
+    """Possible duplicate transaction."""
+    def __init__(self, expression, duplicates):
+        self.expression = expression
+        self.duplicates = duplicates
+
+    def __str__(self):
+        return str(self.expression)
