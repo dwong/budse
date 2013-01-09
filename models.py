@@ -157,7 +157,7 @@ class SubDeposit(db.Model):
         else:
             return _format_out_amount(self._amount)
     def _set_amount(self, amount):
-        self._transaction_amount = _format_db_amount(amount)
+        self._amount = _format_db_amount(amount)
     amount = synonym('_amount', descriptor=property(_get_amount, _set_amount))
     
     def __repr__(self):
@@ -197,7 +197,7 @@ class Transaction(db.Model):
     action = Column(String)
     tags = Column(String)
     _parent = Column('parent_id', Integer, ForeignKey('transactions.id'))
-    _active = Column('active', Boolean, default=False)
+    _active = Column('active', Boolean, default=True)
     __mapper_args__ = {'polymorphic_on':action,
                        'polymorphic_identity':INFORMATIONAL}
 
@@ -330,7 +330,7 @@ class Transaction(db.Model):
         return ('Type: %s%sAmount: $%0.2f%sTransaction Date: %s%sAccount: '
                 '%s%sDescription: %s%s%s%sActive: %s' %
                 (action_type, delimiter, self.amount, delimiter,
-                 self.date.strftime('', delimiter), account, delimiter,
+                 self.date.strftime('%m/%d/%Y'), delimiter, account, delimiter,
                  self.description, delimiter, deduction_repr, subdeposit_repr, 
                  self.active))
 
@@ -403,20 +403,22 @@ class Deposit(Transaction):
 
     __mapper_args__ = {'polymorphic_identity':Transaction.DEPOSIT}
 
-    def __init__(self, user, amount, date, sub_deposits, description=None,
-                 deductions=None, parent=None, duplicate_override=False):
+    def __init__(self, user, amount, date, account=None, sub_deposits=None,
+                 description=None, deductions=None, parent=None,
+                 duplicate_override=False):
         """An object representation of a deposit transaction.
 
         Keyword arguments:
         user -- User
-        amount -- Initial amount of transaction
+        amount -- Amount (which can be split into multiple deposits)
         date -- Transaction date
+        account -- Account object
+        sub_deposits -- List of SubDeposit objects
         description -- User description of transaction (default None)
         deductions -- List of Deduction objects (default None)
         parent -- Transaction object that this Deposit is a child of
             (default None)
         duplicate_override -- Do not check for duplicates (default False)
-        sub_deposits -- List of SubDeposit objects (cannot be an empty list)
 
         When a multiple account deposit is broken down:
         1) Percentage amounts on the gross
@@ -424,8 +426,6 @@ class Deposit(Transaction):
         3) Percentage amounts on the net
 
         """
-        account = sub_deposits.pop() if len(sub_deposits) == 1 else None
-        
         Transaction.__init__(self, user=user, amount=amount, account=account,
                              description=description, date=date, parent=parent,
                              duplicate_override=duplicate_override)
@@ -443,28 +443,22 @@ class Deposit(Transaction):
         if account is not None:
             self.amount -= deduction_total
             self.account.total += self.amount
+        elif sub_deposits is None or len(sub_deposits) == 0:
+            raise DepositException('Accounts are required.')
         else:
-            # last ditch check
-            if accounts is None or len(accounts) == 0:
-                raise DepositException('Accounts are required.')
-            
             self.deposits = []
             
-            # lists of separated accounts
-            gross_accounts = []
-            fixed_accounts = []
-            net_accounts = []
-            # lists of (Account, amount) tuples
+            # list of (Account, amount) tuples
             deposits = []
 
             # Calculate minimum deposit before embarking
             minimum_deposit = deduction_total
             for sd in sub_deposits:
                 # Fixed
-                if s.percentage_or_fixed == SubDeposit.FIXED:
-                    minimum_deposit += s.amount
+                if sd.percentage_or_fixed == SubDeposit.FIXED:
+                    minimum_deposit += sd.amount
                 # Percentage, gross
-                elif s.affect_gross:
+                elif sd.affect_gross:
                     minimum_deposit += self.amount * amount
             
             if self.amount < minimum_deposit:
@@ -508,7 +502,7 @@ class Deposit(Transaction):
             if running_total > 0:
                 net = running_total
                 for nsd in [sd for sd in sub_deposits
-                            if sd.PERCENTAGE_OR_FIXED == SubDeposit.PERCENTAGE
+                            if sd.percentage_or_fixed == SubDeposit.PERCENTAGE
                             and not sd.affect_gross]:
                     amount = net * nsd.amount
                     if amount > 0:
@@ -536,7 +530,7 @@ class Deposit(Transaction):
                 self.deposits.append(deposit)
 
 def _format_db_amount(amount):
-    return int(round(float(amount) * 100))
+    return int(round(float(amount) * 100)) if amount is not None else 0
 
 def _format_out_amount(amount, divisor=100):
-    return float(amount) / divisor
+    return float(amount) / divisor if amount is not None else 0
