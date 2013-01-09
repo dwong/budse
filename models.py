@@ -426,10 +426,6 @@ class Deposit(Transaction):
         3) Percentage amounts on the net
 
         """
-        Transaction.__init__(self, user=user, amount=amount, account=account,
-                             description=description, date=date, parent=parent,
-                             duplicate_override=duplicate_override)
-        
         # Calculate deductions
         deduction_total = 0.00
         self.deductions = deductions
@@ -437,9 +433,13 @@ class Deposit(Transaction):
             for deduction in self.deductions:
                 deduction_total += deduction.amount
                 deduction.parent = self
-            if amount < deduction_total:
-                raise FundsException('Deductions are more than the deposit')
+        if amount < deduction_total:
+            raise FundsException('Deductions are more than the deposit')
             
+        Transaction.__init__(self, user=user, amount=amount, account=account,
+                             description=description, date=date, parent=parent,
+                             duplicate_override=duplicate_override)
+        
         if account is not None:
             self.amount -= deduction_total
             self.account.total += self.amount
