@@ -114,9 +114,10 @@ class Account(db.Model):
                  self.total, delimiter, self.active))
     
 class SubDeposit(db.Model):
-    """An sub-deposit to divide a deposit into accounts.
+    """A sub-deposit to divide a deposit into accounts.
 
-    Stored as a group
+    Stored as a group, which represents splitting up a deposit
+    into multiple different accounts according to varying properties.
     """
     
     # Pseudo class variables that have meaning in the database
