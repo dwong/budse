@@ -69,10 +69,10 @@ class User(db.Model):
         return('User: %s%s%sActive %s' %
                (self.name, delimiter, account_repr, self.status))
 
-class WebsiteAccount(db.Model):
+class Group(db.Model):
     """An account on the website."""
 
-    __tablename__ = 'website_accounts'
+    __tablename__ = 'groups'
 
     id = Column(Integer, primary_key=True)
     name = Column(String, nullable=False)
@@ -81,7 +81,7 @@ class WebsiteAccount(db.Model):
         self.name = name
 
     def __str__(self):
-        return('Web Account: %s' % self.name)
+        return('Account Group: %s' % self.name)
 
 class Account(db.Model):
     """A sub-account that the user can deposit and withdraw from."""
