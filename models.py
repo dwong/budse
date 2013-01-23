@@ -69,6 +69,20 @@ class User(db.Model):
         return('User: %s%s%sActive %s' %
                (self.name, delimiter, account_repr, self.status))
 
+class WebsiteAccount(db.Model):
+    """An account on the website."""
+
+    __tablename__ = 'website_accounts'
+
+    id = Column(Integer, primary_key=True)
+    name = Column(String, nullable=False)
+
+    def __init__(self, name):
+        self.name = name
+
+    def __str__(self):
+        return('Web Account: %s' % self.name)
+
 class Account(db.Model):
     """A sub-account that the user can deposit and withdraw from."""
 
@@ -554,7 +568,6 @@ class Withdrawal(Transaction):
                              description=description, parent=parent, date=date,
                              duplicate_override=duplicate_override)
         self.account.total -= self.amount
-
 
 def _format_db_amount(amount):
     return int(round(float(amount) * 100)) if amount is not None else 0
