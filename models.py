@@ -399,7 +399,7 @@ class Deduction(Transaction):
                              parent=parent, description=description)
 
 class Deposit(Transaction):
-    """Amount to be placed into one or all of the user's Accounts."""
+    """Amount to be added to one or all of the user's Accounts."""
 
     __mapper_args__ = {'polymorphic_identity':Transaction.DEPOSIT}
 
@@ -528,6 +528,33 @@ class Deposit(Transaction):
                                   duplicate_override=duplicate_override)
                 db.session.add(deposit)
                 self.deposits.append(deposit)
+
+class Withdrawal(Transaction):
+    """Subtract from the total of an Account."""
+
+    __mapper_args__ = {'polymorphic_identity':Transaction.WITHDRAWAL}
+
+    def __init__(self, user, amount, date, description,
+                 account, parent=None, duplicate_override=False):
+        """An object representation of a withdrawal transaction.
+
+        Keyword arguments:
+        user -- User
+        amount -- Amount of transaction
+        date -- Transaction date
+        description -- User description of transaction (default None)
+        account -- Account (default None is a whole account deposit)
+        deductions -- List of Deduction objects (default None)
+        parent -- Transaction object that this Deposit is a child of
+            (default None)
+        duplicate_override -- Do not check for duplicates (default False)
+
+        """
+        Transaction.__init__(self, user=user, amount=amount, account=account,
+                             description=description, parent=parent, date=date,
+                             duplicate_override=duplicate_override)
+        self.account.total -= self.amount
+
 
 def _format_db_amount(amount):
     return int(round(float(amount) * 100)) if amount is not None else 0
