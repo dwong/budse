@@ -4,7 +4,7 @@ from sqlalchemy import Table, Column, Integer, String, ForeignKey, desc
 from sqlalchemy import create_engine, DateTime, Date, MetaData, Boolean, or_
 from sqlalchemy.ext.declarative import declarative_base, synonym_for
 from sqlalchemy.orm import sessionmaker, scoped_session, relation, backref
-from sqlalchemy.orm import synonym
+from sqlalchemy.orm import synonym, relationship
 from sqlalchemy.sql.expression import func
 from sqlalchemy.orm.exc import NoResultFound
 from comparator import UpperComparator
@@ -20,6 +20,7 @@ class User(db.Model):
     _name = Column('name', String, nullable=False)
     status = Column(Boolean, default=True)
     whole_account_actions = Column(Boolean)
+    groups = relationship('GroupMember', backref='user')
 
     def _get_name(self):
         return self._name
@@ -82,6 +83,20 @@ class Group(db.Model):
 
     def __str__(self):
         return('Account Group: %s' % self.name)
+
+class GroupMember(db.Model):
+    """User membership in groups.
+
+    Connecting users on the left to groups on the right.
+    """
+
+    __tablename__ = 'group_members'
+
+    user_id = Column(Integer, ForeignKey('users.id'), primary_key=True)
+    group_id = Column(Integer, ForeignKey('groups.id'), primary_key=True)
+    group = relationship('Group', backref='user_groups')
+    is_owner = Column(Boolean, default=True)
+    can_share = Column(Boolean, default=True)
 
 class Account(db.Model):
     """A sub-account that the user can deposit and withdraw from."""
