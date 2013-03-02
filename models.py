@@ -7,6 +7,7 @@ from sqlalchemy.orm import sessionmaker, scoped_session, relation, backref
 from sqlalchemy.orm import synonym, relationship
 from sqlalchemy.sql.expression import func
 from sqlalchemy.orm.exc import NoResultFound
+from sqlalchemy.ext.associationproxy import association_proxy
 from comparator import UpperComparator
 from datetime import datetime
 from app import db
@@ -20,7 +21,7 @@ class User(db.Model):
     _name = Column('name', String, nullable=False)
     status = Column(Boolean, default=True)
     whole_account_actions = Column(Boolean)
-    groups = relationship('GroupMember', backref='user')
+    groups = association_proxy('user_groups', 'group')
 
     def _get_name(self):
         return self._name
@@ -78,6 +79,8 @@ class Group(db.Model):
     id = Column(Integer, primary_key=True)
     name = Column(String, nullable=False)
 
+    members = association_proxy('group_members', 'user')
+
     def __init__(self, name):
         self.name = name
 
@@ -93,10 +96,19 @@ class GroupMember(db.Model):
     __tablename__ = 'group_members'
 
     user_id = Column(Integer, ForeignKey('users.id'), primary_key=True)
+    user = relationship('User', backref=backref('user_groups',
+                                                  cascade="all, delete-orphan"))
     group_id = Column(Integer, ForeignKey('groups.id'), primary_key=True)
-    group = relationship('Group', backref='user_groups')
+    group = relationship('Group', backref=backref('group_members',
+                                                  cascade="all, delete-orphan"))
     is_owner = Column(Boolean, default=True)
     can_share = Column(Boolean, default=True)
+
+    def __init__(self, user=None, group=None, is_owner=True, can_share=True):
+        self.user = user
+        self.group = group
+        self.is_owner = is_owner
+        self.can_share = can_share
 
 class Account(db.Model):
     """A sub-account that the user can deposit and withdraw from."""
