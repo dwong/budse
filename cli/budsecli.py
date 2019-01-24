@@ -273,7 +273,7 @@ class BudseCLI(object):
             amount = budse._format_db_amount(amount)
             return self.session.query(budse.Transaction).\
                 filter(budse.Transaction.amount == amount).\
-                order_by(desc(budse.Transaction.date))
+                order_by(desc(budse.Transaction.date))[:5]
         
     def output_transactions(self, transactions, pre='', breaks='', post=''):
         """Output a list of transactions.
