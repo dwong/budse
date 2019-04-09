@@ -711,7 +711,9 @@ class BudseCLI(object):
             parent_transactions = self.session.query(budse.Transaction).\
                 filter(budse.Transaction.date >= begin_date).\
                 filter(budse.Transaction.date <= end_date).\
-                filter(budse.Transaction.parent == None).\
+                filter(or_(budse.Transaction.parent == None,
+                           budse.Transaction._parent ==
+                           budse.Transaction.id)).\
                 filter(budse.Transaction.status == True).\
                 order_by(budse.Transaction.date).all()
             # dict of (account name, deposits, withdrawals, net change) tuples
@@ -724,7 +726,8 @@ class BudseCLI(object):
                                (delimiter, delimiter, delimiter, delimiter))
             for parent_transaction in parent_transactions:
                 transactions = parent_transaction.children
-                transactions.insert(0, parent_transaction)
+                if len(transactions) != 1 or parent_transaction.id != parent_transaction._parent:
+                    transactions.insert(0, parent_transaction)
                 for transaction in transactions:
                     action = transaction.action
                     if transaction.account is not None:
