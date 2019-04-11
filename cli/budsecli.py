@@ -105,7 +105,7 @@ class BudseCLI(object):
                 print('Not an acceptable value')
         return confirm    
 
-    def _ask_date(self, default_date=datetime.date.today(),
+    def _ask_date(self, default_date=None,
                   prompt='Date of transaction'):
         """Query user for a date.
     
@@ -120,6 +120,8 @@ class BudseCLI(object):
         import re
 
         now = datetime.date.today()
+        if not default_date:
+            default_date = now
         date = None
         prompt = ('%s? (default %s) ' %
                   (prompt, default_date.strftime('%m/%d/%Y')))
