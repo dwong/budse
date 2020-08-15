@@ -24,7 +24,7 @@
 from __future__ import with_statement
 import budse
 from sqlalchemy.orm.exc import NoResultFound, MultipleResultsFound
-from sqlalchemy import desc, or_
+from sqlalchemy import desc, or_, and_
 import datetime
 import os
 import random
@@ -258,7 +258,7 @@ class BudseCLI(object):
                 return None
         elif choice == '4':
             done = False
-            print 'Transaction description matching any of the keywords:\n'
+            print 'Transaction description matching all of the keywords:\n'
             keywords = []
             while not done:
                 keywords.append('%%%s%%' % self._ask_string('Keyword: '))
@@ -267,7 +267,7 @@ class BudseCLI(object):
                 limit = self._ask_amount(type=int, prompt='Limit: ')
             return self.session.query(budse.Transaction).\
                 filter(budse.Transaction.parent == None).\
-                filter(or_(*[budse.Transaction.description.contains(keyword) \
+                filter(and_(*[budse.Transaction.description.contains(keyword) \
                                  for keyword in keywords])).\
                 order_by(desc(budse.Transaction.date))[:limit]
         elif choice == '5':
